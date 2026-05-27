@@ -1,0 +1,22 @@
+const path = require('path');
+
+describe('quote-worker', () => {
+  test('worker file existe e e valido', () => {
+    const workerPath = path.join(__dirname, '..', '..', 'src', 'workers', 'quote-worker.js');
+    expect(() => require.resolve(workerPath)).not.toThrow();
+  });
+
+  test('worker exporta nada (arquivo executavel)', () => {
+    // quote-worker.js usa parentPort e workerData do worker_threads
+    // nao pode ser importado diretamente — apenas validamos que existe
+    const fs = require('fs');
+    const workerPath = path.join(__dirname, '..', '..', 'src', 'workers', 'quote-worker.js');
+    const content = fs.readFileSync(workerPath, 'utf8');
+    expect(content).toContain('parentPort');
+    expect(content).toContain('workerData');
+    expect(content).toContain('resolverFipe');
+    expect(content).toContain('montarPayload');
+    expect(content).toContain('dispararCotacao');
+    expect(content).toContain('pollVersoes');
+  });
+});
