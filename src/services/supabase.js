@@ -9,7 +9,11 @@ function getSupabase() {
   if (!url || !key) {
     throw new Error('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY sao obrigatorios');
   }
-  _client = createClient(url, key);
+  _client = createClient(url, key, {
+    auth: { persistSession: false },
+    realtime: { params: { eventsPerSecond: 0 } },
+    global: { WebSocket: require('ws') },
+  });
   return _client;
 }
 
