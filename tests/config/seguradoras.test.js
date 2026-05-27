@@ -18,7 +18,7 @@ describe('seguradoras config', () => {
         ativa: true,
         seguradora_id: 22,
         credenciais: { login: 'user', senha: 'pass' },
-        config: { comissao: 15, desconto: 0 },
+        config: { percComissao: 15, percDesconto: 0 },
       },
     ];
 

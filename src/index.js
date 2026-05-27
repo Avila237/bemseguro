@@ -22,8 +22,8 @@ async function resetStuckQuotes() {
     const supabase = getSupabase();
     const { error, count } = await supabase
       .from('os_cotacao')
-      .update({ status: 'sem_cotacao' })
-      .in('status', ['cotando', 'em_cotacao']);
+      .update({ status: 'pendente' })
+      .in('status', ['cotando']);
 
     if (error) throw error;
     log.info(`OS travadas resetadas (${count ?? 0})`);

@@ -13,7 +13,7 @@
   "dependencies": {
     "express": "^4.21.0",
     "@supabase/supabase-js": "^2.45.0",
-    "bcrypt": "^5.1.1"
+    "bcryptjs": "^2.4.3"
   },
   "devDependencies": {
     "jest": "^29.7.0"
