@@ -1,5 +1,4 @@
 const bcrypt = require('bcryptjs');
-const { createClient } = require('@supabase/supabase-js');
 
 function internalAuth(req, res, next) {
   const token = req.headers['x-secret-token'];

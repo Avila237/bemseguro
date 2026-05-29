@@ -11,8 +11,10 @@ function getSupabase() {
   }
   _client = createClient(url, key, {
     auth: { persistSession: false },
-    realtime: { params: { eventsPerSecond: 0 } },
-    global: { WebSocket: require('ws') },
+    realtime: {
+      transport: require('ws'),
+      params: { eventsPerSecond: 0 },
+    },
   });
   return _client;
 }
