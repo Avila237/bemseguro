@@ -5,7 +5,15 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "test": "jest --verbose --forceExit"
+    "test": "jest --verbose --forceExit",
+    "build:admin": "cd admin && npm run build",
+    "dev:admin": "cd admin && npm run dev"
+  },
+  "jest": {
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "<rootDir>/admin/"
+    ]
   },
   "engines": {
     "node": ">=20"

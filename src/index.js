@@ -1,4 +1,5 @@
 const express = require('express');
+const path = require('path');
 const { createLogger } = require('./utils/logger');
 const { getSession } = require('./services/session');
 const { getSupabase } = require('./services/supabase');
@@ -16,6 +17,14 @@ app.use(express.json());
 app.use(healthRouter);
 app.use(quoteRouter);
 app.use(lookupRouter);
+
+// Painel admin (React/Vite) — build estatico servido em /admin.
+// O fallback para index.html habilita o client-side routing do React Router.
+const ADMIN_DIST = path.join(__dirname, '..', 'admin', 'dist');
+app.use('/admin', express.static(ADMIN_DIST));
+app.get(/^\/admin(\/.*)?$/, (req, res) => {
+  res.sendFile(path.join(ADMIN_DIST, 'index.html'));
+});
 
 async function resetStuckQuotes() {
   try {

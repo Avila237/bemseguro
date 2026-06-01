@@ -182,6 +182,77 @@ bem-seguro-hub/
   .gitignore
 ```
 
+## Frontend — Painel Admin
+
+Painel administrativo web, no mesmo repositório, servido pelo Express em produção.
+
+### Stack
+
+| Camada      | Tecnologia        |
+|-------------|-------------------|
+| Bundler     | Vite 5            |
+| UI          | React 18          |
+| Estilo      | Tailwind CSS 3    |
+| Roteamento  | React Router v6   |
+| Testes      | Vitest            |
+
+### Localização e scripts
+
+- Código em `admin/` (estrutura própria, com `package.json` separado do backend).
+- Build: `npm run build:admin` (na raiz) → output estático em `admin/dist`.
+- Dev: `npm run dev:admin` (na raiz) → dev server do Vite.
+- O Express serve `/admin` a partir de `admin/dist`, com **fallback SPA** para
+  `index.html` (habilita o client-side routing do React Router). `vite.config.js`
+  usa `base: '/admin/'` para casar com esse prefixo.
+
+### Variáveis de ambiente (Vite)
+
+Prefixo `VITE_` obrigatório (expostas ao browser). Usar sempre a **anon key** pública.
+
+```env
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+```
+
+### Paleta de cores
+
+| Token          | Hex       | Uso                          |
+|----------------|-----------|------------------------------|
+| primary        | `#E8723A` | laranja primário, item ativo |
+| primary.dark   | `#C75B28` | laranja escuro (fundo logo)  |
+| sidebar        | `#1F2937` | fundo da sidebar             |
+| canvas         | `#F9FAFB` | fundo da área de conteúdo    |
+| ink            | `#111827` | texto principal              |
+| status.green   | `#16A34A` | badge de status              |
+| status.blue    | `#2563EB` | badge de status              |
+| status.red     | `#DC2626` | badge de status              |
+| status.amber   | `#D97706` | badge de status              |
+| status.gray    | `#6B7280` | badge de status              |
+
+### Componentes de layout
+
+- `Sidebar` — menu lateral com links (logo no topo, item ativo em laranja).
+- `Topbar` — título da página, botão "Nova Cotação", sino de notificação, avatar.
+- `Layout` — compõe sidebar + topbar + área de conteúdo.
+- `ProtectedRoute` — verifica sessão Supabase Auth e redireciona para `/admin/login`.
+
+### Estrutura de páginas
+
+- `admin/src/pages/` — **uma página por tela** (Dashboard, Ordens, Nova Cotação,
+  Seguradoras, Monitoring, API Keys, Audit Log). Adicionar conforme implementadas.
+
+### Testes
+
+- **Vitest + Testing Library** (jsdom), **separado do Jest do backend**.
+- O Jest da API ignora `admin/` (via `jest.testPathIgnorePatterns`).
+- Rodar com `cd admin && npm test`.
+
+### Build em produção (Docker)
+
+- `Dockerfile` faz **multi-stage build**: o stage 1 instala as deps do admin e roda
+  `npm run build:admin`; o stage 2 (runtime) copia apenas `admin/dist` para a imagem,
+  sem carregar as devDependencies do front.
+
 ## Variáveis de ambiente
 
 ```env
