@@ -1,5 +1,19 @@
 const { internalAuth } = require('../../src/utils/auth');
 
+// Mocks para o caminho feliz (202): evita subir Worker Thread real, login e
+// carga de seguradoras. As demais rotas/validacoes nao dependem destes mocks
+// (param invalido retorna 400 antes de chegar aqui).
+jest.mock('worker_threads', () => ({
+  Worker: jest.fn().mockImplementation(() => ({ on: jest.fn() })),
+}));
+jest.mock('../../src/services/session', () => ({
+  getSession: jest.fn().mockResolvedValue({ token: 'sessao-fake' }),
+  invalidateSession: jest.fn(),
+}));
+jest.mock('../../src/config/seguradoras', () => ({
+  getCalculos: jest.fn(() => [{ seguradoraId: 1 }]),
+}));
+
 // Helper: extrai o handler final (apos o middleware internalAuth) da rota POST /quote/auto
 function getQuoteHandler() {
   const router = require('../../src/routes/quote');
@@ -43,6 +57,35 @@ describe('POST /quote/auto — validacao de formato', () => {
       body: { segurado: { cpf: '' }, veiculo: { placa: 'JCU9D37' } },
     }, res);
     expect(res._status).toBe(400);
+  });
+});
+
+describe('POST /quote/auto — resposta assincrona (202)', () => {
+  test('responde 202 imediatamente sem aguardar o worker', async () => {
+    const { Worker } = require('worker_threads');
+    Worker.mockClear();
+
+    const handler = getQuoteHandler();
+    const res = mockRes();
+    await handler({ body: { placa: 'JCU9D37', cpf: '12345678900', os_id: 'os-1' } }, res);
+
+    expect(res._status).toBe(202);
+    expect(res._body).toEqual({ success: true, message: 'Cotação em processamento' });
+    // O worker foi disparado em background (fire-and-forget).
+    expect(Worker).toHaveBeenCalledTimes(1);
+  });
+
+  test('registra listeners de background no worker (message/error/exit)', async () => {
+    const { Worker } = require('worker_threads');
+    Worker.mockClear();
+
+    const handler = getQuoteHandler();
+    const res = mockRes();
+    await handler({ body: { placa: 'JCU9D37', cpf: '12345678900', os_id: 'os-2' } }, res);
+
+    const instancia = Worker.mock.results[0].value;
+    const eventos = instancia.on.mock.calls.map(c => c[0]);
+    expect(eventos).toEqual(expect.arrayContaining(['message', 'error', 'exit']));
   });
 });
 

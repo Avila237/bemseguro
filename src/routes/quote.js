@@ -39,25 +39,32 @@ router.post('/quote/auto', internalAuth, async (req, res) => {
 
   const workerPath = path.join(__dirname, '..', 'workers', 'quote-worker.js');
 
-  const result = await new Promise((resolve, reject) => {
-    const worker = new Worker(workerPath, {
-      workerData: {
-        body,
-        session,
-        calculos,
-        saveCotacoesUrl: SAVE_COTACOES_URL,
-        railwayToken: process.env.RAILWAY_SECRET_TOKEN,
-      },
-    });
-    worker.on('message', resolve);
-    worker.on('error', reject);
-    worker.on('exit', code => {
-      if (code !== 0) reject(new Error(`Worker encerrou com codigo ${code}`));
-    });
+  // Dispara o worker em background (fire-and-forget). A cotação roda em paralelo
+  // e o resultado final é persistido pela Edge Function save-cotacoes; o chamador
+  // acompanha o status via get-cotacoes. Por isso respondemos 202 de imediato,
+  // sem aguardar a conclusão.
+  const worker = new Worker(workerPath, {
+    workerData: {
+      body,
+      session,
+      calculos,
+      saveCotacoesUrl: SAVE_COTACOES_URL,
+      railwayToken: process.env.RAILWAY_SECRET_TOKEN,
+    },
   });
 
-  if (result.invalidateSession) invalidateSession();
-  return res.json(result);
+  worker.on('message', result => {
+    if (result && result.invalidateSession) invalidateSession();
+    log.info(`Worker concluido | OS=${body.os_id} | Placa=${placa}`);
+  });
+  worker.on('error', err => {
+    log.error(`Erro no worker | OS=${body.os_id} | Placa=${placa} | ${err.message}`);
+  });
+  worker.on('exit', code => {
+    if (code !== 0) log.error(`Worker encerrou com codigo ${code} | OS=${body.os_id} | Placa=${placa}`);
+  });
+
+  return res.status(202).json({ success: true, message: 'Cotação em processamento' });
 });
 
 module.exports = router;
