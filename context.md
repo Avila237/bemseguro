@@ -263,6 +263,7 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
   `pages/OrdemServico.jsx`. Linhas navegam para `/admin/ordens/:id`.
 - `/admin/ordens/:id` — Detalhe da OS (Tela 04). Componente `pages/DetalheOS.jsx`.
 - `/admin/nova-cotacao` — Nova Cotação (Tela 05). Componente `pages/NovaCotacao.jsx`.
+- `/admin/seguradoras` — Seguradoras (Tela 06). Componente `pages/Seguradoras.jsx`.
 - Demais rotas ficam dentro do `Layout`, protegidas por `ProtectedRoute`.
 - `/admin/` redireciona para `/admin/dashboard`.
 
@@ -307,7 +308,12 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
     "condutor é o próprio segurado") e Apólice Anterior (colapsável). Máscaras de
     CPF/CNPJ, telefone e CEP; validação client-side com destaque vermelho; botão
     "Criar OS" com loading; toast de sucesso; "Descartar" e "Voltar".
-  - A implementar: Seguradoras, Monitoring, API Keys, Audit Log.
+  - `Seguradoras.jsx` — Tela 06. Banner de segurança (credenciais nunca no
+    painel), header "X de Y ativas", e um card por seguradora (sigla colorida,
+    nome + slug, "Configurada", métricas placeholder, toggle Ativo/Inativo que
+    faz UPDATE em `seguradoras.ativa`, engrenagem placeholder). Inativa = card com
+    opacidade reduzida. Skeleton no load e estado vazio.
+  - A implementar: Monitoring, API Keys, Audit Log.
 
 - O badge ao lado de "Ordens de Serviço" na Sidebar mostra o total de OS com
   status `pendente`/`cotando` (via `lib/osStats.js`, atualizado a cada 60s).
@@ -390,6 +396,45 @@ Em `admin/src/lib/cotacao.js`:
 - **`criarCotacao(payload)`** — `supabase.functions.invoke('run-quote', { body })`
   e retorna o `id` da OS criada (`data.id || data.os_id`) para redirecionar a
   `/admin/ordens/:id`.
+
+### Queries Supabase + RLS (Seguradoras)
+
+Em `admin/src/lib/seguradoras.js`:
+
+- **`listarSeguradoras()`** — `seguradoras select('id,nome,nome_seguradora,ativa')
+  order nome`. **Nunca** seleciona `credenciais` (segurança — senhas ficam só no
+  backend). O badge "Configurada" é exibido para toda linha (assume-se que estar
+  na tabela = configurada), sem consultar credenciais.
+- **`setAtiva(id, ativa)`** — `seguradoras update({ ativa }).eq('id', id)` (toggle
+  Ativo/Inativo, com update otimista + reversão em erro).
+
+**RLS necessária** (a tabela `seguradoras` hoje só é acessível pelo
+`service_role`). Para o painel (usuário autenticado) ler e ligar/desligar sem
+expor credenciais, criar políticas no Supabase:
+
+```sql
+-- Leitura: authenticated pode ler as linhas (colunas sensíveis ficam protegidas
+-- por column-level grants OU simplesmente não são selecionadas pelo frontend).
+create policy "seguradoras_select_auth" on seguradoras
+  for select to authenticated using (true);
+
+-- Update: authenticated só pode alterar (na prática, só mexe em `ativa`).
+create policy "seguradoras_update_ativa_auth" on seguradoras
+  for update to authenticated using (true) with check (true);
+```
+
+> Idealmente restringir o UPDATE apenas à coluna `ativa` via
+> `GRANT UPDATE (ativa) ON seguradoras TO authenticated` (column-level), mantendo
+> `credenciais`/`config` fora do alcance do role autenticado. Alternativa mais
+> segura: expor o toggle por uma Edge Function `seguradora-toggle` (service_role)
+> em vez de UPDATE direto.
+
+**TODO — métricas placeholder:** taxa de retorno, tempo médio, último sucesso e
+erros 24h são **mock determinístico** (`metricasPlaceholder(nome)` em
+`lib/seguradoras.js`), pois ainda não há fonte real. Implementar agregação a
+partir de `cotacoes`/`audit_log` por seguradora (ex.: taxa = retornos/disparos,
+tempo médio do polling, contagem de erros nas últimas 24h). O "Testar conexões"
+e a engrenagem de config também são placeholders.
 
 ### Testes
 

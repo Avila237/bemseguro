@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import OrdemServico from './pages/OrdemServico.jsx';
 import DetalheOS from './pages/DetalheOS.jsx';
 import NovaCotacao from './pages/NovaCotacao.jsx';
+import Seguradoras from './pages/Seguradoras.jsx';
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="ordens" element={<OrdemServico />} />
           <Route path="ordens/:id" element={<DetalheOS />} />
           <Route path="nova-cotacao" element={<NovaCotacao />} />
+          <Route path="seguradoras" element={<Seguradoras />} />
           {/* As demais paginas serao registradas aqui conforme forem criadas */}
         </Route>
 

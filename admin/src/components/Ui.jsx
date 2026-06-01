@@ -135,6 +135,20 @@ export function KV({ k, v, mono }) {
   );
 }
 
+// ---- Toggle switch ----
+export function Toggle({ on, onChange, blue, ...rest }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      className={'toggle' + (on ? ' on' : '') + (blue ? ' blue' : '')}
+      onClick={() => onChange(!on)}
+      {...rest}
+    ></button>
+  );
+}
+
 // ---- Skeleton (loading) ----
 export function Skeleton({ width = '100%', height = 14, radius = 'var(--r-xs)', style }) {
   return <div className="skeleton" style={{ width, height, borderRadius: radius, ...style }}></div>;

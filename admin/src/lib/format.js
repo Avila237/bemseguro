@@ -84,6 +84,17 @@ export function veiculoDe(dadosRisco) {
   return dadosRisco.modelo || '';
 }
 
+// Slug curto a partir de um nome (1ª palavra, sem acentos): "HDI Seguros" → "hdi".
+export function slug(nome) {
+  return String(nome || '')
+    .trim()
+    .split(/\s+/)[0]
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
 // Cor + sigla determinísticas para uma seguradora (sem depender de query extra).
 const PALETA_SEG = ['#003781', '#0033A0', '#006B3F', '#E60012', '#CC092F', '#F37021', '#0072CE', '#7A1FA0'];
 export function segVisual(nome) {
