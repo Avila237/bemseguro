@@ -1,0 +1,265 @@
+/* ============================================================
+   Bem Seguro Hub — Design Tokens & Base
+   "Clareza Operacional" — branco-quente, laranja (marca), azul (apoio)
+   Portado do bundle de design (claude.ai/design). Sistema visual usado
+   por todo o painel admin; cada tela nova deve reusar estes tokens/classes.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* ---- Neutrals (warm white → near-black) ---- */
+  --bg:            oklch(0.984 0.004 75);
+  --bg-sunken:     oklch(0.968 0.005 75);
+  --surface:       oklch(0.998 0.001 75);
+  --surface-2:     oklch(0.978 0.004 75);
+  --border:        oklch(0.912 0.006 75);
+  --border-strong: oklch(0.86 0.008 75);
+
+  --text:      oklch(0.27 0.012 65);
+  --text-soft: oklch(0.44 0.012 65);
+  --text-mute: oklch(0.60 0.010 65);
+  --text-faint:oklch(0.72 0.008 75);
+
+  /* ---- Brand: Orange (primary) ---- */
+  --brand:       oklch(0.685 0.158 50);
+  --brand-hover: oklch(0.628 0.165 47);
+  --brand-press: oklch(0.575 0.165 45);
+  --brand-tint:  oklch(0.955 0.030 60);
+  --brand-tint-2:oklch(0.925 0.052 58);
+  --brand-text:  oklch(0.50 0.150 45);
+
+  /* ---- Support: Blue ---- */
+  --blue:       oklch(0.585 0.130 248);
+  --blue-hover: oklch(0.530 0.135 248);
+  --blue-tint:  oklch(0.955 0.028 248);
+  --blue-tint-2:oklch(0.918 0.050 248);
+  --blue-text:  oklch(0.46 0.130 250);
+
+  /* ---- Status ---- */
+  --st-pendente-bg:  oklch(0.952 0.004 75);
+  --st-pendente-fg:  oklch(0.48 0.010 75);
+  --st-pendente-dot: oklch(0.68 0.010 75);
+
+  --st-cotando-bg:   oklch(0.952 0.028 248);
+  --st-cotando-fg:   oklch(0.46 0.130 250);
+  --st-cotando-dot:  oklch(0.585 0.130 248);
+
+  --st-cotado-bg:    oklch(0.948 0.045 155);
+  --st-cotado-fg:    oklch(0.43 0.110 152);
+  --st-cotado-dot:   oklch(0.585 0.130 152);
+
+  --st-erro-bg:      oklch(0.954 0.034 27);
+  --st-erro-fg:      oklch(0.505 0.175 27);
+  --st-erro-dot:     oklch(0.585 0.190 27);
+
+  --st-cancelada-bg: oklch(0.960 0.055 85);
+  --st-cancelada-fg: oklch(0.50 0.110 75);
+  --st-cancelada-dot:oklch(0.72 0.130 80);
+
+  --green:      oklch(0.585 0.130 152);
+  --green-tint: oklch(0.948 0.045 155);
+  --red:        oklch(0.585 0.190 27);
+  --red-tint:   oklch(0.954 0.034 27);
+  --amber:      oklch(0.72 0.130 80);
+
+  /* ---- Geometry ---- */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 11px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+
+  --sh-sm: 0 1px 2px oklch(0.27 0.012 65 / 0.05), 0 1px 1px oklch(0.27 0.012 65 / 0.04);
+  --sh-md: 0 2px 4px oklch(0.27 0.012 65 / 0.05), 0 4px 12px oklch(0.27 0.012 65 / 0.06);
+  --sh-lg: 0 8px 24px oklch(0.27 0.012 65 / 0.10), 0 2px 6px oklch(0.27 0.012 65 / 0.06);
+  --sh-pop: 0 12px 40px oklch(0.27 0.012 65 / 0.16), 0 4px 10px oklch(0.27 0.012 65 / 0.08);
+
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+
+  --sidebar-w: 248px;
+  --topbar-h: 60px;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-size: 14px;
+  line-height: 1.45;
+}
+h1, h2, h3, h4, h5 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+p { margin: 0; }
+button { font-family: inherit; }
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+::selection { background: var(--brand-tint-2); }
+
+.mono { font-family: var(--font-mono); font-feature-settings: "tnum" 1; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* ---- scrollbars ---- */
+.scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; border: 3px solid var(--bg); }
+.scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 13.5px; font-weight: 500; line-height: 1;
+  padding: 0 14px; height: 38px; border-radius: var(--r-sm);
+  border: 1px solid transparent; cursor: pointer; white-space: nowrap;
+  transition: background .14s, border-color .14s, color .14s, box-shadow .14s, transform .06s;
+  user-select: none;
+}
+.btn:active { transform: translateY(0.5px); }
+.btn svg { width: 16px; height: 16px; }
+
+.btn-primary { background: var(--brand); color: #fff; box-shadow: var(--sh-sm); }
+.btn-primary:hover { background: var(--brand-hover); }
+.btn-primary:active { background: var(--brand-press); }
+
+.btn-blue { background: var(--blue); color: #fff; box-shadow: var(--sh-sm); }
+.btn-blue:hover { background: var(--blue-hover); }
+
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border-strong); box-shadow: var(--sh-sm); }
+.btn-secondary:hover { background: var(--surface-2); border-color: var(--text-faint); }
+
+.btn-ghost { background: transparent; color: var(--text-soft); }
+.btn-ghost:hover { background: var(--surface-2); color: var(--text); }
+
+.btn-danger { background: var(--surface); color: var(--red); border-color: color-mix(in oklch, var(--red) 30%, var(--border)); }
+.btn-danger:hover { background: var(--red-tint); }
+
+.btn-sm { height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: var(--r-xs); }
+.btn-sm svg { width: 14px; height: 14px; }
+.btn-lg { height: 44px; padding: 0 20px; font-size: 15px; }
+.btn-icon { width: 36px; height: 36px; padding: 0; }
+.btn-icon.btn-sm { width: 30px; height: 30px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ============================================================
+   Cards & surfaces
+   ============================================================ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-sm);
+}
+.card-pad { padding: 18px 20px; }
+.card-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+}
+.card-title { font-size: 13px; font-weight: 600; }
+.eyebrow {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-mute);
+}
+
+/* ============================================================
+   Badges / Status pills
+   ============================================================ */
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; line-height: 1;
+  padding: 5px 10px 5px 8px; border-radius: 99px; white-space: nowrap;
+}
+.badge .dot { width: 7px; height: 7px; border-radius: 99px; flex: none; }
+
+.st-pendente  { background: var(--st-pendente-bg);  color: var(--st-pendente-fg); }
+.st-pendente .dot  { background: var(--st-pendente-dot); }
+.st-cotando   { background: var(--st-cotando-bg);   color: var(--st-cotando-fg); }
+.st-cotando .dot   { background: var(--st-cotando-dot); animation: pulse 1.2s ease-in-out infinite; }
+.st-cotado    { background: var(--st-cotado-bg);    color: var(--st-cotado-fg); }
+.st-cotado .dot    { background: var(--st-cotado-dot); }
+.st-erro      { background: var(--st-erro-bg);      color: var(--st-erro-fg); }
+.st-erro .dot      { background: var(--st-erro-dot); }
+.st-cancelada { background: var(--st-cancelada-bg); color: var(--st-cancelada-fg); }
+.st-cancelada .dot { background: var(--st-cancelada-dot); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--st-cotando-dot); }
+  50% { opacity: 0.55; box-shadow: 0 0 0 4px transparent; }
+}
+
+.tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; font-weight: 500; padding: 3px 8px; border-radius: var(--r-xs);
+  background: var(--surface-2); color: var(--text-soft); border: 1px solid var(--border);
+}
+.tag-blue { background: var(--blue-tint); color: var(--blue-text); border-color: var(--blue-tint-2); }
+.tag-brand { background: var(--brand-tint); color: var(--brand-text); border-color: var(--brand-tint-2); }
+.tag-green { background: var(--green-tint); color: var(--st-cotado-fg); border-color: color-mix(in oklch, var(--green) 22%, transparent); }
+
+/* ============================================================
+   Forms
+   ============================================================ */
+.field { display: flex; flex-direction: column; gap: 6px; }
+.label { font-size: 12.5px; font-weight: 500; color: var(--text-soft); }
+.label .req { color: var(--brand); margin-left: 2px; }
+.hint { font-size: 11.5px; color: var(--text-mute); }
+
+.input, .select, .textarea {
+  width: 100%; font-family: inherit; font-size: 13.5px; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm); padding: 0 12px; height: 38px;
+  transition: border-color .14s, box-shadow .14s; outline: none;
+}
+.textarea { height: auto; padding: 10px 12px; line-height: 1.5; resize: vertical; }
+.input:focus, .select:focus, .textarea:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-tint-2);
+}
+.input::placeholder, .textarea::placeholder { color: var(--text-faint); }
+.input.mono { letter-spacing: 0.04em; }
+.select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 11px center; padding-right: 32px;
+}
+
+/* Toggle */
+.toggle { position: relative; width: 38px; height: 22px; border-radius: 99px; background: var(--border-strong); cursor: pointer; transition: background .16s; flex: none; border: none; padding: 0; }
+.toggle::after { content:""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 99px; background: #fff; box-shadow: var(--sh-sm); transition: transform .16s; }
+.toggle.on { background: var(--brand); }
+.toggle.on::after { transform: translateX(16px); }
+.toggle.on.blue { background: var(--blue); }
+
+/* ============================================================
+   Utilities
+   ============================================================ */
+.row { display: flex; align-items: center; }
+.col { display: flex; flex-direction: column; }
+.gap-4 { gap: 4px; } .gap-6 { gap: 6px; } .gap-8 { gap: 8px; } .gap-10 { gap: 10px; }
+.gap-12 { gap: 12px; } .gap-16 { gap: 16px; } .gap-20 { gap: 20px; } .gap-24 { gap: 24px; }
+.between { justify-content: space-between; }
+.center { align-items: center; }
+.wrap { flex-wrap: wrap; }
+.grow { flex: 1; }
+.muted { color: var(--text-mute); }
+.soft { color: var(--text-soft); }
+.fw500 { font-weight: 500; } .fw600 { font-weight: 600; }
+.fz11 { font-size: 11px; } .fz12 { font-size: 12px; } .fz13 { font-size: 13px; }
+.divider { height: 1px; background: var(--border); }
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.fade-up { animation: fadeUp .26s ease both; }
+.fade-in { animation: fadeIn .2s ease both; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.8s linear infinite; }
+
+/* ============================================================
+   Login (Tela 01) — responsividade do split de duas colunas
+   ============================================================ */
+@media (max-width: 860px) {
+  .login-split { grid-template-columns: 1fr !important; }
+  .login-brand { display: none !important; }
+}

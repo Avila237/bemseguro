@@ -1,7 +1,7 @@
 // Itens do menu lateral. Compartilhado entre Sidebar (links) e Topbar (titulo
 // da pagina atual). As paginas em si serao adicionadas depois em src/pages/.
 export const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard', icon: '📊', end: true },
+  { to: '/dashboard', label: 'Dashboard', icon: '📊', end: true },
   { to: '/ordens', label: 'Ordens de Serviço', icon: '📋' },
   { to: '/nova-cotacao', label: 'Nova Cotação', icon: '➕' },
   { to: '/seguradoras', label: 'Seguradoras', icon: '🏢' },

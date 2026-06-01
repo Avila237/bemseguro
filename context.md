@@ -214,20 +214,26 @@ VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 ```
 
-### Paleta de cores
+### Design system ("Clareza Operacional")
 
-| Token          | Hex       | Uso                          |
-|----------------|-----------|------------------------------|
-| primary        | `#E8723A` | laranja primário, item ativo |
-| primary.dark   | `#C75B28` | laranja escuro (fundo logo)  |
-| sidebar        | `#1F2937` | fundo da sidebar             |
-| canvas         | `#F9FAFB` | fundo da área de conteúdo    |
-| ink            | `#111827` | texto principal              |
-| status.green   | `#16A34A` | badge de status              |
-| status.blue    | `#2563EB` | badge de status              |
-| status.red     | `#DC2626` | badge de status              |
-| status.amber   | `#D97706` | badge de status              |
-| status.gray    | `#6B7280` | badge de status              |
+Tokens e classes do design (de claude.ai/design) vivem em
+`admin/src/styles/theme.css` — **fonte canônica do visual**, carregado
+globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
+
+- **Tipografia:** IBM Plex Sans (interface) + IBM Plex Mono (placas, CPF, IDs,
+  JSON, valores técnicos), via Google Fonts.
+- **Cor:** tokens **OKLCH** em CSS custom properties (`--brand` laranja,
+  `--blue` apoio, neutros branco-quente, `--st-*` por status do enum).
+- **Classes utilitárias/componentes:** `.btn`/`.btn-primary`/`.btn-lg`, `.input`,
+  `.field`/`.label`, `.badge`/`.st-*`, `.card`, `.row`/`.col`/`.gap-*`, `.mono`,
+  `.muted`/`.soft`, etc. — ver `theme.css`.
+- **Ícones:** set stroke estilo lucide em `admin/src/components/Icons.jsx`.
+- **Geometria:** raios `--r-xs..xl`, sombras `--sh-sm..pop`.
+
+> Obs.: `tailwind.config.js` ainda define uma paleta hex aproximada
+> (`primary #E8723A`, `sidebar #1F2937`, etc.) usada por Sidebar/Topbar/Layout.
+> Telas implementadas a partir do design (ex.: Login) usam os tokens OKLCH de
+> `theme.css` diretamente. Convergir os dois é um TODO de polimento.
 
 ### Componentes de layout
 
@@ -236,10 +242,30 @@ VITE_SUPABASE_ANON_KEY=
 - `Layout` — compõe sidebar + topbar + área de conteúdo.
 - `ProtectedRoute` — verifica sessão Supabase Auth e redireciona para `/admin/login`.
 
+### Rotas
+
+- `/admin/login` — tela de login (pública). Componente `pages/Login.jsx`.
+- Demais rotas ficam dentro do `Layout`, protegidas por `ProtectedRoute`.
+- `/admin/` redireciona para `/admin/dashboard`.
+
+### Autenticação
+
+- Login via `supabase.auth.signInWithPassword({ email, password })` (anon key no browser).
+- Sem cadastro público — usuários criados manualmente no Supabase Auth.
+- Pós-login redireciona para `/admin/dashboard`; se já houver sessão ativa, o
+  `Login` redireciona direto pro dashboard.
+- `ProtectedRoute` checa `supabase.auth.getSession()` e manda pro `/admin/login`
+  quando não há sessão.
+
 ### Estrutura de páginas
 
-- `admin/src/pages/` — **uma página por tela** (Dashboard, Ordens, Nova Cotação,
-  Seguradoras, Monitoring, API Keys, Audit Log). Adicionar conforme implementadas.
+- `admin/src/pages/` — **uma página por tela**. Implementadas:
+  - `Login.jsx` — Tela 01 (login), seguindo o design "Telas (Figma)": split de
+    duas colunas (painel de marca laranja com gradiente/pills + formulário),
+    inputs com ícone, mostrar/ocultar senha, botão primário com seta/spinner.
+    Responsivo: abaixo de 860px a coluna de marca some (só o formulário).
+  - A implementar: Dashboard, Ordens, Nova Cotação, Seguradoras, Monitoring,
+    API Keys, Audit Log.
 
 ### Testes
 
