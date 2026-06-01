@@ -12,6 +12,44 @@ export function maskCPF(cpf) {
   return `${d.slice(0, 3)}.***.***-${d.slice(9, 11)}`;
 }
 
+// Máscara progressiva de CPF/CNPJ para inputs (000.000.000-00 ou 00.000.000/0000-00).
+export function formatCpfCnpj(v) {
+  const d = String(v || '').replace(/\D/g, '').slice(0, 14);
+  if (d.length <= 11) {
+    return d
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  }
+  return d
+    .replace(/(\d{2})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1/$2')
+    .replace(/(\d{4})(\d{1,2})$/, '$1-$2');
+}
+
+// Máscara progressiva de telefone para inputs: (00) 00000-0000 / (00) 0000-0000.
+export function formatTelefone(v) {
+  const d = String(v || '').replace(/\D/g, '').slice(0, 11);
+  if (d.length <= 10) {
+    return d.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d{1,4})$/, '$1-$2');
+  }
+  return d.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d{1,4})$/, '$1-$2');
+}
+
+// Máscara progressiva de CEP: 00000-000.
+export function formatCep(v) {
+  const d = String(v || '').replace(/\D/g, '').slice(0, 8);
+  return d.replace(/(\d{5})(\d{1,3})$/, '$1-$2');
+}
+
+// Converte data ISO (YYYY-MM-DD, do input date) para BR (DD/MM/YYYY).
+export function isoParaBR(iso) {
+  if (!iso) return '';
+  const [y, m, d] = String(iso).split('-');
+  return d && m && y ? `${d}/${m}/${y}` : '';
+}
+
 // Tempo relativo a partir de um timestamp ISO: "agora", "8min atrás", "1h atrás", "2d atrás".
 export function timeAgo(iso) {
   if (!iso) return '—';

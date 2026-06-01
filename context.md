@@ -214,6 +214,10 @@ VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 ```
 
+> O frontend **não** guarda segredos do backend. O lookup de placa passa pela
+> Edge Function `lookup-placa` (que detém o token do Railway no servidor), então
+> não existem `VITE_RAILWAY_*` no admin.
+
 ### Design system ("Clareza Operacional")
 
 Tokens e classes do design (de claude.ai/design) vivem em
@@ -258,6 +262,7 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
 - `/admin/ordens` — Lista de Ordens de Serviço (Tela 03). Componente
   `pages/OrdemServico.jsx`. Linhas navegam para `/admin/ordens/:id`.
 - `/admin/ordens/:id` — Detalhe da OS (Tela 04). Componente `pages/DetalheOS.jsx`.
+- `/admin/nova-cotacao` — Nova Cotação (Tela 05). Componente `pages/NovaCotacao.jsx`.
 - Demais rotas ficam dentro do `Layout`, protegidas por `ProtectedRoute`.
 - `/admin/` redireciona para `/admin/dashboard`.
 
@@ -295,7 +300,14 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
     placeholder); coluna direita = cards Segurado/Veículo/Condutor/Apólice
     Anterior + JSON dos `dados_risco`. **Polling de 5s** enquanto `cotando`,
     skeletons, estado vazio e **404** se a OS não existir.
-  - A implementar: Nova Cotação, Seguradoras, Monitoring, API Keys, Audit Log.
+  - `NovaCotacao.jsx` — Tela 05 (criação manual de OS). 4 seções: Cliente/Lead
+    (toggle Novo/Existente — Existente é placeholder), Dados da OS (tipo só Auto
+    ativo; Residencial/Empresarial desabilitados; prioridade; observações),
+    Veículo e Condutor (lookup de placa, campos auto-preenchidos, toggle
+    "condutor é o próprio segurado") e Apólice Anterior (colapsável). Máscaras de
+    CPF/CNPJ, telefone e CEP; validação client-side com destaque vermelho; botão
+    "Criar OS" com loading; toast de sucesso; "Descartar" e "Voltar".
+  - A implementar: Seguradoras, Monitoring, API Keys, Audit Log.
 
 - O badge ao lado de "Ordens de Serviço" na Sidebar mostra o total de OS com
   status `pendente`/`cotando` (via `lib/osStats.js`, atualizado a cada 60s).
@@ -346,6 +358,38 @@ Em `admin/src/lib/detalhe.js`:
 - Os dados de Segurado/Veículo/Condutor/Apólice saem de `os_cotacao.dados_risco`
   (formato estruturado novo), com fallback para as colunas da própria OS
   (`nome`, `cpf`, `email`, `cep`, `placa`).
+
+### Nova Cotação — lookup de placa e payload (Tela 05)
+
+Em `admin/src/lib/cotacao.js`:
+
+- **`lookupPlaca(placa)`** — chama `supabase.functions.invoke('lookup-placa',
+  { body: { placa } })`. A Edge Function `lookup-placa` é quem fala com o Railway
+  (`/lookup/placa`) usando o secret token guardado **no servidor** — nenhum
+  segredo vai pro bundle do browser. Retorna `{ encontrado, modelo, anoModelo,
+  anoFabricacao, fipe, chassi }`. Disparado no `onBlur` do campo Placa (e no
+  botão "Buscar placa"); com spinner; se `success:false`, marca "não encontrada"
+  e permite preenchimento manual.
+- **`montarPayloadV2(form)`** — monta o payload **formato v2**:
+
+  ```json
+  {
+    "ramo": "auto", "origem": "Manual", "prioridade": "Média", "observacoes": "",
+    "segurado":  { "nome", "cpf", "dataNascimento": "DD/MM/AAAA", "sexo": "M|F",
+                   "estadoCivil", "cep", "email", "telefone" },
+    "veiculo":   { "placa", "modelo", "anoModelo", "anoFabricacao", "chassi", "fipe" },
+    "condutor":  { "nome", "cpf", "dataNascimento", "sexo", "relacaoSegurado" },
+    "apoliceAnterior": { "seguradora", "numero", "classeBonus", "sinistro" }
+  }
+  ```
+
+  Sexo (Masculino/Feminino → `M`/`F`), estado civil normalizado
+  (`casado`/`solteiro`/…), data convertida para `DD/MM/AAAA`. Quando "condutor é
+  o próprio segurado", o bloco `condutor` recebe nome/cpf do segurado e
+  `relacaoSegurado: 'segurado'`.
+- **`criarCotacao(payload)`** — `supabase.functions.invoke('run-quote', { body })`
+  e retorna o `id` da OS criada (`data.id || data.os_id`) para redirecionar a
+  `/admin/ordens/:id`.
 
 ### Testes
 

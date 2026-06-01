@@ -101,6 +101,28 @@ export function Empty({ icon = 'inbox', title, sub }) {
   );
 }
 
+// ---- Toast (notificação transitória, canto inferior) ----
+export function Toast({ message, type = 'success' }) {
+  if (!message) return null;
+  const cor = { success: 'var(--green)', error: 'var(--red)', info: 'var(--blue)' }[type] || 'var(--blue)';
+  const ic = { success: 'check', error: 'xCircle', info: 'info' }[type] || 'info';
+  const I = Icon[ic];
+  return (
+    <div
+      role="status"
+      className="fade-up"
+      style={{
+        position: 'fixed', bottom: 22, left: '50%', transform: 'translateX(-50%)', zIndex: 200,
+        display: 'flex', alignItems: 'center', gap: 10, background: 'var(--text)', color: '#fff',
+        padding: '10px 16px', borderRadius: 99, boxShadow: 'var(--sh-pop)', fontSize: 13.5, fontWeight: 500,
+      }}
+    >
+      <span style={{ color: cor, display: 'flex' }}>{I && <I width={16} height={16} />}</span>
+      {message}
+    </div>
+  );
+}
+
 // ---- KV (par rótulo/valor usado nos blocos de detalhe) ----
 export function KV({ k, v, mono }) {
   return (
