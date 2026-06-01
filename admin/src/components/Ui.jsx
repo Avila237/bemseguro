@@ -101,6 +101,18 @@ export function Empty({ icon = 'inbox', title, sub }) {
   );
 }
 
+// ---- KV (par rótulo/valor usado nos blocos de detalhe) ----
+export function KV({ k, v, mono }) {
+  return (
+    <div className="col gap-4" style={{ minWidth: 0 }}>
+      <span className="fz11 muted fw500" style={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>{k}</span>
+      <span className={'fz13 fw500' + (mono ? ' mono' : '')} style={{ wordBreak: 'break-word' }}>
+        {v || <span className="muted">—</span>}
+      </span>
+    </div>
+  );
+}
+
 // ---- Skeleton (loading) ----
 export function Skeleton({ width = '100%', height = 14, radius = 'var(--r-xs)', style }) {
   return <div className="skeleton" style={{ width, height, borderRadius: radius, ...style }}></div>;

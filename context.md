@@ -256,8 +256,8 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
 - `/admin/login` — tela de login (pública). Componente `pages/Login.jsx`.
 - `/admin/dashboard` — Dashboard (Tela 02). Componente `pages/Dashboard.jsx`.
 - `/admin/ordens` — Lista de Ordens de Serviço (Tela 03). Componente
-  `pages/OrdemServico.jsx`. Linhas navegam para `/admin/ordens/:id` (detalhe,
-  Tela 04 — ainda a implementar).
+  `pages/OrdemServico.jsx`. Linhas navegam para `/admin/ordens/:id`.
+- `/admin/ordens/:id` — Detalhe da OS (Tela 04). Componente `pages/DetalheOS.jsx`.
 - Demais rotas ficam dentro do `Layout`, protegidas por `ProtectedRoute`.
 - `/admin/` redireciona para `/admin/dashboard`.
 
@@ -287,8 +287,15 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
     período (De/Até), tabela ordenada (mais recente) com **paginação** (limit/
     offset), menu de ações por linha (Ver detalhes / Recotar / Cancelar),
     skeletons, estado vazio. Botões "Exportar" (placeholder) e "Nova Cotação".
-  - A implementar: Detalhe da OS, Nova Cotação, Seguradoras, Monitoring,
-    API Keys, Audit Log.
+  - `DetalheOS.jsx` — Tela 04 (detalhe da OS). Header com `OS-XXXXX` + placa +
+    nome, badges (status/ramo/origem/prioridade), ações Validar/Comparar
+    (placeholders), Recotar (real) e Cancelar OS. Coluna esquerda = cards de
+    cotação (badge da seguradora, Melhor Preço no 1º, prêmio em destaque,
+    franquia/cobertura/tempo/nº cálculo, PDF abre `url_pdf`, Selecionar
+    placeholder); coluna direita = cards Segurado/Veículo/Condutor/Apólice
+    Anterior + JSON dos `dados_risco`. **Polling de 5s** enquanto `cotando`,
+    skeletons, estado vazio e **404** se a OS não existir.
+  - A implementar: Nova Cotação, Seguradoras, Monitoring, API Keys, Audit Log.
 
 - O badge ao lado de "Ordens de Serviço" na Sidebar mostra o total de OS com
   status `pendente`/`cotando` (via `lib/osStats.js`, atualizado a cada 60s).
@@ -321,6 +328,24 @@ Em `admin/src/lib/ordens.js`:
 - `cancelarOS(id)` — `os_cotacao update status='cancelada'`.
 - `lib/osStats.js` `contarOSAtivas()` — `count` de `os_cotacao` com
   `status in ('pendente','cotando')` (badge da Sidebar).
+
+### Queries Supabase (Detalhe da OS)
+
+Em `admin/src/lib/detalhe.js`:
+
+- `carregarOS(id)` — `os_cotacao select('*') eq id maybeSingle()` (lança
+  `OSNaoEncontrada` → 404 na tela) + `cotacoes select('*') eq os_id
+  order premio asc`.
+- `recotarOS(os)` — `supabase.functions.invoke('run-quote', { body: { os_id,
+  dados_risco } })` para disparar nova cotação (a anon key/Authorization é
+  resolvida pelo client). Reaproveita a Edge Function existente.
+- `cancelarOS(id)` — reusa `lib/ordens.js`.
+- **Polling**: enquanto `os.status === 'cotando'`, a tela rechama `carregarOS`
+  a cada **5s** (sem skeleton) até o status virar `cotado`/`erro`/`cancelada`;
+  o `setInterval` é limpo quando o status muda ou o componente desmonta.
+- Os dados de Segurado/Veículo/Condutor/Apólice saem de `os_cotacao.dados_risco`
+  (formato estruturado novo), com fallback para as colunas da própria OS
+  (`nome`, `cpf`, `email`, `cep`, `placa`).
 
 ### Testes
 
