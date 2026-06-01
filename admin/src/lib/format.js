@@ -5,6 +5,23 @@ export function BRL(v) {
   return 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Máscara de CPF: 123.***.***-00 (preserva 3 primeiros e 2 últimos dígitos).
+export function maskCPF(cpf) {
+  const d = String(cpf || '').replace(/\D/g, '');
+  if (d.length < 11) return cpf || '—';
+  return `${d.slice(0, 3)}.***.***-${d.slice(9, 11)}`;
+}
+
+// Tempo relativo a partir de um timestamp ISO: "agora", "8min atrás", "1h atrás", "2d atrás".
+export function timeAgo(iso) {
+  if (!iso) return '—';
+  const min = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+  if (min < 1) return 'agora';
+  if (min < 60) return `${min}min atrás`;
+  if (min < 1440) return `${Math.floor(min / 60)}h atrás`;
+  return `${Math.floor(min / 1440)}d atrás`;
+}
+
 // Rótulo legível por status (enum do banco).
 export const STATUS_LABEL = {
   pendente: 'Pendente',

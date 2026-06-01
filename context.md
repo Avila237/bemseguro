@@ -255,6 +255,9 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
 
 - `/admin/login` — tela de login (pública). Componente `pages/Login.jsx`.
 - `/admin/dashboard` — Dashboard (Tela 02). Componente `pages/Dashboard.jsx`.
+- `/admin/ordens` — Lista de Ordens de Serviço (Tela 03). Componente
+  `pages/OrdemServico.jsx`. Linhas navegam para `/admin/ordens/:id` (detalhe,
+  Tela 04 — ainda a implementar).
 - Demais rotas ficam dentro do `Layout`, protegidas por `ProtectedRoute`.
 - `/admin/` redireciona para `/admin/dashboard`.
 
@@ -279,8 +282,16 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
     card "Alertas" (OS travadas > 10min + erros, clicáveis), tabela "Últimas OS"
     e ranking "Melhor taxa de retorno". Loading skeletons, **auto-refresh a cada
     60s**, botão "Atualizar", estado vazio amigável e estado de erro.
-  - A implementar: Ordens, Nova Cotação, Seguradoras, Monitoring, API Keys,
-    Audit Log.
+  - `OrdemServico.jsx` — Tela 03 (lista de OS). Tabs de status com contadores,
+    busca com **debounce de 300ms** (nome/placa/CPF/nº OS), filtros de ramo e
+    período (De/Até), tabela ordenada (mais recente) com **paginação** (limit/
+    offset), menu de ações por linha (Ver detalhes / Recotar / Cancelar),
+    skeletons, estado vazio. Botões "Exportar" (placeholder) e "Nova Cotação".
+  - A implementar: Detalhe da OS, Nova Cotação, Seguradoras, Monitoring,
+    API Keys, Audit Log.
+
+- O badge ao lado de "Ordens de Serviço" na Sidebar mostra o total de OS com
+  status `pendente`/`cotando` (via `lib/osStats.js`, atualizado a cada 60s).
 
 ### Queries Supabase (Dashboard)
 
@@ -295,6 +306,21 @@ do usuário autenticado:
 - `cotacoes` `os_id in (últimas)` → melhor preço (menor prêmio) por OS.
 - `os_cotacao` `status in ('cotando','erro')` → alertas (travadas > 10min via
   `updated_at`; erros recentes via `error_message`).
+
+### Queries Supabase (Lista de OS)
+
+Em `admin/src/lib/ordens.js`:
+
+- `carregarLista({status,busca,ramo,de,ate,page})` — `os_cotacao` com `select`
+  `{ count: 'exact' }`, filtros dinâmicos (`eq status`, `eq dados_risco->>ramo`,
+  `gte/lte created_at`, `.or(ilike nome/placa/cpf + id prefix p/ nº OS)`),
+  `order created_at desc` e `range()` (paginação). Depois, `cotacoes`
+  `os_id in (ids)` → melhor preço (menor prêmio) por OS.
+- `contarStatus(filtros)` — `os_cotacao select('status')` sob os mesmos filtros
+  (exceto o status) → contadores das tabs.
+- `cancelarOS(id)` — `os_cotacao update status='cancelada'`.
+- `lib/osStats.js` `contarOSAtivas()` — `count` de `os_cotacao` com
+  `status in ('pendente','cotando')` (badge da Sidebar).
 
 ### Testes
 

@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { NAV_ITEMS } from '../lib/nav.js';
 import { Icon, Shield } from './Icons.jsx';
+import { contarOSAtivas } from '../lib/osStats.js';
 
 // Wordmark em texto (logo provisório) — estilo do design system.
 function Wordmark() {
@@ -36,6 +38,22 @@ function Wordmark() {
 }
 
 export default function Sidebar() {
+  // Badge dinâmico de OS ativas (pendente + cotando) no item "Ordens de Serviço".
+  const [ativas, setAtivas] = useState(0);
+  useEffect(() => {
+    let ativo = true;
+    const carregar = () =>
+      contarOSAtivas()
+        .then(c => { if (ativo) setAtivas(c); })
+        .catch(() => {});
+    carregar();
+    const t = setInterval(carregar, 60000);
+    return () => {
+      ativo = false;
+      clearInterval(t);
+    };
+  }, []);
+
   return (
     <aside
       style={{
@@ -104,6 +122,21 @@ export default function Sidebar() {
                   )}
                   <I width={18} height={18} style={{ flex: 'none', strokeWidth: isActive ? 2 : 1.8 }} />
                   <span className="grow">{item.label}</span>
+                  {item.to === '/ordens' && ativas > 0 && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        background: isActive ? 'var(--brand)' : 'var(--surface-2)',
+                        color: isActive ? '#fff' : 'var(--text-mute)',
+                        padding: '1px 7px',
+                        borderRadius: 99,
+                        border: isActive ? 'none' : '1px solid var(--border)',
+                      }}
+                    >
+                      {ativas}
+                    </span>
+                  )}
                 </>
               )}
             </NavLink>
