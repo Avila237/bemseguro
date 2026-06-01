@@ -135,6 +135,39 @@ export function KV({ k, v, mono }) {
   );
 }
 
+// ---- Modal ----
+export function Modal({ open, onClose, title, footer, children, width = 540 }) {
+  if (!open) return null;
+  return (
+    <div
+      className="fade-in"
+      onMouseDown={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 150, background: 'oklch(0.27 0.012 65 / 0.32)', backdropFilter: 'blur(2px)', display: 'grid', placeItems: 'center', padding: 24 }}
+    >
+      <div
+        className="fade-up"
+        role="dialog"
+        aria-modal="true"
+        onMouseDown={e => e.stopPropagation()}
+        style={{ width, maxWidth: '100%', maxHeight: '90vh', background: 'var(--surface)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--sh-pop)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+      >
+        {title && (
+          <div className="row between center" style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+            <div className="fw600" style={{ fontSize: 15 }}>{title}</div>
+            <button className="btn btn-ghost btn-sm btn-icon" aria-label="Fechar" onClick={onClose}><Icon.x /></button>
+          </div>
+        )}
+        <div className="scroll" style={{ overflow: 'auto', padding: 20 }}>{children}</div>
+        {footer && (
+          <div className="row between center" style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', background: 'var(--surface-2)', gap: 10 }}>
+            {footer}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---- Toggle switch ----
 export function Toggle({ on, onChange, blue, ...rest }) {
   return (

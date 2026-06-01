@@ -264,6 +264,7 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
 - `/admin/ordens/:id` — Detalhe da OS (Tela 04). Componente `pages/DetalheOS.jsx`.
 - `/admin/nova-cotacao` — Nova Cotação (Tela 05). Componente `pages/NovaCotacao.jsx`.
 - `/admin/seguradoras` — Seguradoras (Tela 06). Componente `pages/Seguradoras.jsx`.
+- `/admin/api-keys` — API Keys (Tela 07). Componente `pages/ApiKeys.jsx`.
 - Demais rotas ficam dentro do `Layout`, protegidas por `ProtectedRoute`.
 - `/admin/` redireciona para `/admin/dashboard`.
 
@@ -313,7 +314,10 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
     nome + slug, "Configurada", métricas placeholder, toggle Ativo/Inativo que
     faz UPDATE em `seguradoras.ativa`, engrenagem placeholder). Inativa = card com
     opacidade reduzida. Skeleton no load e estado vazio.
-  - A implementar: Monitoring, API Keys, Audit Log.
+  - `ApiKeys.jsx` — Tela 07. Tabela de chaves (nome, chave truncada, criada em,
+    último uso, rate limit, status, Revogar) e modal de criação que gera a chave,
+    salva e a exibe **uma única vez** com botão copiar. Skeleton e estado vazio.
+  - A implementar: Monitoring, Audit Log.
 
 - O badge ao lado de "Ordens de Serviço" na Sidebar mostra o total de OS com
   status `pendente`/`cotando` (via `lib/osStats.js`, atualizado a cada 60s).
@@ -435,6 +439,44 @@ erros 24h são **mock determinístico** (`metricasPlaceholder(nome)` em
 partir de `cotacoes`/`audit_log` por seguradora (ex.: taxa = retornos/disparos,
 tempo médio do polling, contagem de erros nas últimas 24h). O "Testar conexões"
 e a engrenagem de config também são placeholders.
+
+### Queries Supabase + RLS (API Keys)
+
+Em `admin/src/lib/apiKeys.js`:
+
+- **`listarApiKeys()`** — `api_keys select(id,nome,key_hash,ativa,rate_limit,
+  created_at,last_used_at) order created_at desc`.
+- **`gerarChave()`** — gera `bsh_live_` + 24 hex via `crypto.getRandomValues`.
+- **`criarApiKey({nome, rateLimit})`** — `insert({ nome, key_hash: chave, ativa,
+  rate_limit })`. **No piloto, `key_hash` guarda a chave em texto plano.**
+- **`revogarApiKey(id)`** — `update({ ativa: false }).eq('id', id)`.
+- **`truncarChave(k)`** — exibição `bsh_live_xxxx…yyyy`.
+
+**Fluxo de criação:** o operador informa nome + rate limit → "Gerar chave" gera a
+chave, faz o `insert` e a exibe **uma única vez** (com botão copiar e aviso). Ao
+recarregar a lista, só aparece a versão truncada de `key_hash`.
+
+**RLS necessária** (a tabela `api_keys` hoje só é acessível pelo `service_role`).
+Para o painel (usuário autenticado) listar/criar/revogar:
+
+```sql
+create policy "api_keys_select_auth" on api_keys
+  for select to authenticated using (true);
+create policy "api_keys_insert_auth" on api_keys
+  for insert to authenticated with check (true);
+create policy "api_keys_update_auth" on api_keys
+  for update to authenticated using (true) with check (true);
+```
+
+**TODOs:**
+- **bcrypt no hardening:** trocar o `key_hash` em texto plano por um hash bcrypt
+  (gerar a chave, exibir 1x, salvar só o hash; validação por hash no backend).
+  Hoje, como é texto plano, um admin autenticado consegue ler a chave inteira via
+  `key_hash` — aceitável só no piloto.
+- **Widget "Sessão Aggilizador"** (rodapé da Sidebar): hoje é **placeholder
+  estático** (badge "Ativa", timer 41:08, barra 74%). Falta um endpoint que
+  exponha o TTL real da sessão Aggilizador (a sessão vive na main thread do
+  backend, cache de 55min) — ligar o widget a esse dado quando existir.
 
 ### Testes
 

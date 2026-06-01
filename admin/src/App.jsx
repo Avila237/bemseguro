@@ -7,6 +7,7 @@ import OrdemServico from './pages/OrdemServico.jsx';
 import DetalheOS from './pages/DetalheOS.jsx';
 import NovaCotacao from './pages/NovaCotacao.jsx';
 import Seguradoras from './pages/Seguradoras.jsx';
+import ApiKeys from './pages/ApiKeys.jsx';
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="ordens/:id" element={<DetalheOS />} />
           <Route path="nova-cotacao" element={<NovaCotacao />} />
           <Route path="seguradoras" element={<Seguradoras />} />
+          <Route path="api-keys" element={<ApiKeys />} />
           {/* As demais paginas serao registradas aqui conforme forem criadas */}
         </Route>
 

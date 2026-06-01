@@ -143,6 +143,23 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Sessão Aggilizador (placeholder — sem endpoint de TTL ainda). Ver context.md. */}
+      <div style={{ padding: 12, borderTop: '1px solid var(--border)' }}>
+        <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '11px 12px' }}>
+          <div className="row between center" style={{ marginBottom: 7 }}>
+            <span className="fz11 fw600 muted" style={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>Sessão Aggilizador</span>
+            <span className="badge st-cotado" style={{ padding: '3px 8px', fontSize: 11 }}><span className="dot"></span>Ativa</span>
+          </div>
+          <div className="row between center">
+            <span className="fz12 muted">Expira em</span>
+            <span className="mono fz12 fw600">41:08</span>
+          </div>
+          <div style={{ height: 4, borderRadius: 99, background: 'var(--border)', marginTop: 7, overflow: 'hidden' }}>
+            <div style={{ width: '74%', height: '100%', background: 'var(--green)', borderRadius: 99 }}></div>
+          </div>
+        </div>
+      </div>
     </aside>
   );
 }
