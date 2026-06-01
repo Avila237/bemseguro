@@ -29,16 +29,19 @@ const { body, session, calculos, saveCotacoesUrl, railwayToken } = workerData;
 
     const anoModelo = parseInt(veiculo.anoModelo, 10) || null;
     const anoFabricacao = parseInt(veiculo.anoFabricacao, 10) || null;
+    const fabricante = parseInt(veiculo.fabricante, 10) || null;
 
     // resolverFipe espera dados_risco com { veiculo (descricao), fipe, chassi };
     // incluimos anoModelo/anoFabricacao para que o ano do veiculo seja resolvido
-    // a partir do bloco veiculo (e nao apenas parseado da descricao).
+    // a partir do bloco veiculo (e nao apenas parseado da descricao), e fabricante
+    // para que o codigo do fabricante seja preservado no FIPE explicito.
     dadosRiscoFipe = {
       veiculo: veiculo.modelo || '',
       fipe: veiculo.fipe || undefined,
       chassi: veiculo.chassi || null,
       anoModelo,
       anoFabricacao,
+      fabricante,
     };
 
     montarExtra = {
@@ -47,6 +50,7 @@ const { body, session, calculos, saveCotacoesUrl, railwayToken } = workerData;
       apoliceAnterior,
       anoFabricacao,
       anoModelo,
+      fabricante,
     };
   } else {
     ({ placa, cpf, nome, email, cep } = body);

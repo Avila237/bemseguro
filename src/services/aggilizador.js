@@ -19,6 +19,7 @@ function montarPayload({
   apoliceAnterior,
   anoFabricacao,
   anoModelo,
+  fabricante, // codigo do fabricante vindo do bloco veiculo (formato v2)
 }) {
   const parsers = require('../utils/parsers');
   const dr = dados_risco || {};
@@ -78,9 +79,11 @@ function montarPayload({
   const cepPernoite = seguradoCep;
   const placaNorm = (placa || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().substring(0, 7);
 
-  const { fipe, fabricante, modelo, valReferenciado, anoVeiculo, chassi } = fipeResult || {};
+  const { fipe, fabricante: fabricanteFipe, modelo, valReferenciado, anoVeiculo, chassi } = fipeResult || {};
   const anoFab = anoFabricacao || anoVeiculo || null;
   const anoMod = anoModelo || anoVeiculo || null;
+  // Fabricante: prioriza o do resolverFipe; se ausente, usa o do bloco veiculo (v2).
+  const fabricanteFinal = fabricanteFipe || fabricante || null;
 
   const vigenciaIni = new Date().toISOString();
   const vigenciaFim = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
@@ -112,11 +115,14 @@ function montarPayload({
       calculos,
       automoveis: [{
         descricao: modelo || '',
-        fabricante: fabricante || null,
+        fabricante: fabricanteFinal,
         anoFabricacao: anoFab,
         anoModelo: anoMod,
         combustivel: 1,
+        // O Aggilizador espera `codigoFipe`. Mantemos `fipe` (igual ao server.js
+        // original, que funciona) e enviamos `codigoFipe` com o mesmo valor.
         fipe: fipe || null,
+        codigoFipe: fipe || null,
         chassi: chassi || dr.chassi || null,
         placa: placaNorm,
         pctAjuste: 100,

@@ -51,6 +51,18 @@ describe('montarPayload', () => {
     expect(payload.cotacao.calculos[0].nome).toBe('Aliro');
   });
 
+  test('envia fipe e codigoFipe com o mesmo valor', () => {
+    const payload = montarPayload(baseParams);
+    const auto = payload.cotacao.automoveis[0];
+    expect(auto.fipe).toBe('0170461');
+    expect(auto.codigoFipe).toBe('0170461');
+  });
+
+  test('fabricante vem do fipeResult', () => {
+    const payload = montarPayload(baseParams);
+    expect(payload.cotacao.automoveis[0].fabricante).toBe(29);
+  });
+
   test('vigencia e 1 ano', () => {
     const payload = montarPayload(baseParams);
     const ini = new Date(payload.cotacao.vigenciaIni);
@@ -184,6 +196,25 @@ describe('montarPayload — novo formato (contrato CRM)', () => {
     const payload = montarPayload(novoParams);
     expect(payload.cotacao.automoveis[0].anoModelo).toBe(2024);
     expect(payload.cotacao.automoveis[0].anoFabricacao).toBe(2024);
+  });
+
+  test('fabricante vem do fipeResult no formato novo', () => {
+    const payload = montarPayload(novoParams);
+    expect(payload.cotacao.automoveis[0].fabricante).toBe(59);
+  });
+
+  test('usa fabricante do bloco veiculo (v2) quando fipeResult.fabricante ausente', () => {
+    const params = { ...novoParams, fipeResult: { ...fipeResult, fabricante: null }, fabricante: 76 };
+    const payload = montarPayload(params);
+    expect(payload.cotacao.automoveis[0].fabricante).toBe(76);
+  });
+
+  test('envia codigoFipe alem de fipe', () => {
+    const params = { ...novoParams, fipeResult: { ...fipeResult, fipe: '0059549' } };
+    const payload = montarPayload(params);
+    const auto = payload.cotacao.automoveis[0];
+    expect(auto.fipe).toBe('0059549');
+    expect(auto.codigoFipe).toBe('0059549');
   });
 
   test('usa fipeResult.anoVeiculo como fallback quando anoModelo/anoFabricacao ausentes', () => {
