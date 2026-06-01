@@ -13,7 +13,13 @@ const SAVE_COTACOES_URL = `${process.env.SUPABASE_URL}/functions/v1/save-cotacoe
 
 router.post('/quote/auto', internalAuth, async (req, res) => {
   const body = req.body;
-  if (!body.placa || !body.cpf) {
+
+  // Detecta formato: novo contrato CRM (blocos estruturados) vs legado (flat).
+  const novoFormato = !!body.segurado;
+  const placa = novoFormato ? (body.veiculo && body.veiculo.placa) : body.placa;
+  const cpf = novoFormato ? body.segurado.cpf : body.cpf;
+
+  if (!placa || !cpf) {
     return res.status(400).json({ error: 'placa e cpf sao obrigatorios' });
   }
 
@@ -29,7 +35,7 @@ router.post('/quote/auto', internalAuth, async (req, res) => {
     return res.status(500).json({ success: false, error: 'Nenhuma seguradora configurada' });
   }
 
-  log.info(`Iniciando worker | OS=${body.os_id} | Placa=${body.placa}`);
+  log.info(`Iniciando worker | OS=${body.os_id} | Placa=${placa}`);
 
   const workerPath = path.join(__dirname, '..', 'workers', 'quote-worker.js');
 

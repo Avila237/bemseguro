@@ -6,17 +6,56 @@ const { montarPayload, dispararCotacao, pollVersoes } = require('../services/agg
 const { body, session, calculos, saveCotacoesUrl, railwayToken } = workerData;
 
 (async () => {
-  const { placa, cpf, nome, email, cep, os_id, dados_risco = {} } = body;
+  // Detecta o formato de entrada: novo contrato CRM traz blocos estruturados
+  // (presenca de body.segurado); formato legado traz campos soltos + dados_risco.
+  const novoFormato = !!body.segurado;
+
+  let placa, cpf, nome, email, cep;
+  const os_id = body.os_id;
+  let dadosRiscoFipe;          // objeto compativel com resolverFipe
+  let montarExtra = {};        // campos extras do novo formato p/ montarPayload
+
+  if (novoFormato) {
+    const segurado = body.segurado || {};
+    const veiculo = body.veiculo || {};
+    const condutor = body.condutor || {};
+    const apoliceAnterior = body.apoliceAnterior || {};
+
+    placa = veiculo.placa;
+    cpf = segurado.cpf;
+    nome = segurado.nome;
+    email = segurado.email;
+    cep = segurado.cep;
+
+    // resolverFipe espera dados_risco com { veiculo (descricao), fipe, chassi }
+    dadosRiscoFipe = {
+      veiculo: veiculo.modelo || '',
+      fipe: veiculo.fipe || undefined,
+      chassi: veiculo.chassi || null,
+    };
+
+    montarExtra = {
+      segurado,
+      condutor,
+      apoliceAnterior,
+      anoFabricacao: parseInt(veiculo.anoFabricacao) || null,
+      anoModelo: parseInt(veiculo.anoModelo) || null,
+    };
+  } else {
+    ({ placa, cpf, nome, email, cep } = body);
+    dadosRiscoFipe = body.dados_risco || {};
+  }
+
   const { aggerToken, mcToken } = session;
   const placaNorm = (placa || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().substring(0, 7);
 
   const log = createLogger({ scope: 'worker', placa: placaNorm, os_id });
 
-  log.info(`CPF=${cpf}`);
+  log.info(`CPF=${cpf} | formato=${novoFormato ? 'novo' : 'legado'}`);
 
   try {
     const fipeResult = await resolverFipe({
-      dados_risco,
+      dados_risco: dadosRiscoFipe,
       placa: placaNorm,
       mcToken,
       aggerToken,
@@ -31,9 +70,10 @@ const { body, session, calculos, saveCotacoesUrl, railwayToken } = workerData;
       nome,
       email,
       cep,
-      dados_risco,
+      dados_risco: dadosRiscoFipe,
       fipeResult,
       calculos,
+      ...montarExtra,
     });
 
     log.info(`Disparando cotacao em ${calculos.length} seguradoras...`);

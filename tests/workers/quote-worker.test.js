@@ -19,4 +19,18 @@ describe('quote-worker', () => {
     expect(content).toContain('dispararCotacao');
     expect(content).toContain('pollVersoes');
   });
+
+  test('worker detecta novo formato e le os blocos estruturados', () => {
+    const fs = require('fs');
+    const workerPath = path.join(__dirname, '..', '..', 'src', 'workers', 'quote-worker.js');
+    const content = fs.readFileSync(workerPath, 'utf8');
+    // deteccao por presenca de body.segurado
+    expect(content).toContain('body.segurado');
+    // le os novos blocos
+    expect(content).toContain('body.veiculo');
+    expect(content).toContain('body.condutor');
+    expect(content).toContain('body.apoliceAnterior');
+    // mantem suporte ao formato legado
+    expect(content).toContain('dados_risco');
+  });
 });

@@ -18,6 +18,24 @@ function parseSexo(valor) {
   return String(valor).toUpperCase().trim() === 'F' ? 'F' : 'M';
 }
 
+function parseRelacaoSegurado(valor) {
+  if (!valor) return 1;
+  if (typeof valor === 'number') return valor;
+  const map = {
+    segurado: 1,
+    proprio: 1,
+    proprietario: 1,
+    conjuge: 2,
+    filho: 3,
+    filha: 3,
+    pai: 4,
+    mae: 4,
+    outro: 5,
+  };
+  const norm = String(valor).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+  return map[norm] || 1;
+}
+
 function extrairAnoVeiculo(descricao) {
   if (!descricao) return null;
   const match = String(descricao).match(/(\d{4})\s*$/);
@@ -40,6 +58,7 @@ module.exports = {
   parseDataNasc,
   parseEstadoCivil,
   parseSexo,
+  parseRelacaoSegurado,
   extrairAnoVeiculo,
   extrairNomeCondutor,
   extrairDataNascCondutor,

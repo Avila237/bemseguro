@@ -2,6 +2,7 @@ const {
   parseDataNasc,
   parseEstadoCivil,
   parseSexo,
+  parseRelacaoSegurado,
   extrairAnoVeiculo,
   extrairNomeCondutor,
   extrairDataNascCondutor,
@@ -71,6 +72,39 @@ describe('parseSexo', () => {
   test('retorna M para outros valores', () => {
     expect(parseSexo('M')).toBe('M');
     expect(parseSexo('X')).toBe('M');
+  });
+});
+
+describe('parseRelacaoSegurado', () => {
+  test('retorna 1 (segurado) como default', () => {
+    expect(parseRelacaoSegurado(null)).toBe(1);
+    expect(parseRelacaoSegurado(undefined)).toBe(1);
+    expect(parseRelacaoSegurado('')).toBe(1);
+  });
+
+  test('converte string segurado/proprio para 1', () => {
+    expect(parseRelacaoSegurado('segurado')).toBe(1);
+    expect(parseRelacaoSegurado('proprio')).toBe(1);
+    expect(parseRelacaoSegurado('proprietario')).toBe(1);
+  });
+
+  test('converte outras relacoes para codigo', () => {
+    expect(parseRelacaoSegurado('conjuge')).toBe(2);
+    expect(parseRelacaoSegurado('filho')).toBe(3);
+    expect(parseRelacaoSegurado('outro')).toBe(5);
+  });
+
+  test('ignora case, acentos e espacos', () => {
+    expect(parseRelacaoSegurado(' Cônjuge ')).toBe(2);
+    expect(parseRelacaoSegurado('SEGURADO')).toBe(1);
+  });
+
+  test('aceita numero direto', () => {
+    expect(parseRelacaoSegurado(3)).toBe(3);
+  });
+
+  test('retorna default para valor desconhecido', () => {
+    expect(parseRelacaoSegurado('xyz')).toBe(1);
   });
 });
 
