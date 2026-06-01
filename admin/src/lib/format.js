@@ -60,6 +60,15 @@ export function timeAgo(iso) {
   return `${Math.floor(min / 1440)}d atrás`;
 }
 
+// Data/hora curta para logs: "01/06 14:32:08" (horário local).
+export function dataHora(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 // Rótulo legível por status (enum do banco).
 export const STATUS_LABEL = {
   pendente: 'Pendente',

@@ -265,6 +265,7 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
 - `/admin/nova-cotacao` — Nova Cotação (Tela 05). Componente `pages/NovaCotacao.jsx`.
 - `/admin/seguradoras` — Seguradoras (Tela 06). Componente `pages/Seguradoras.jsx`.
 - `/admin/api-keys` — API Keys (Tela 07). Componente `pages/ApiKeys.jsx`.
+- `/admin/audit-log` — Audit Log (Tela 08). Componente `pages/AuditLog.jsx`.
 - Demais rotas ficam dentro do `Layout`, protegidas por `ProtectedRoute`.
 - `/admin/` redireciona para `/admin/dashboard`.
 
@@ -317,7 +318,17 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
   - `ApiKeys.jsx` — Tela 07. Tabela de chaves (nome, chave truncada, criada em,
     último uso, rate limit, status, Revogar) e modal de criação que gera a chave,
     salva e a exibe **uma única vez** com botão copiar. Skeleton e estado vazio.
-  - A implementar: Monitoring, Audit Log.
+  - `AuditLog.jsx` — Tela 08. Registro de chamadas à API (debug de integrações).
+    Barra de filtros: busca por endpoint/API key (**debounce 300ms**), dropdown
+    de endpoints (lista distinta dinâmica), dropdown de status HTTP (200, 202,
+    400, 401, 404, 500) e campo de Data. Tabela ordenada pela mais recente:
+    Data/hora (`dd/mm HH:mm:ss`), Método (badge colorida — POST laranja, GET azul,
+    PUT âmbar, DELETE vermelho), Endpoint, API key (nome ou "interno" se
+    `api_key_id` nulo), Status HTTP (badge — 2xx verde, 3xx azul, 4xx amarelo,
+    5xx vermelho) e Duração (`ms`/`s`, realçada em vermelho acima de 1s). Rodapé
+    "X chamadas · janela de 24h" + **paginação server-side (20/página)**.
+    Skeleton no load e estado vazio. Botão "Exportar CSV" (placeholder).
+  - A implementar: Monitoring.
 
 - O badge ao lado de "Ordens de Serviço" na Sidebar mostra o total de OS com
   status `pendente`/`cotando` (via `lib/osStats.js`, atualizado a cada 60s).
@@ -477,6 +488,39 @@ create policy "api_keys_update_auth" on api_keys
   estático** (badge "Ativa", timer 41:08, barra 74%). Falta um endpoint que
   exponha o TTL real da sessão Aggilizador (a sessão vive na main thread do
   backend, cache de 55min) — ligar o widget a esse dado quando existir.
+
+### Queries Supabase + RLS (Audit Log)
+
+Em `admin/src/lib/auditLog.js`:
+
+- **`carregarAudit({busca,endpoint,status,data,page})`** — `audit_log` com
+  `select('id,endpoint,method,response_status,duration_ms,created_at,api_key_id,
+  api_keys(nome)', { count: 'exact' })`. O **join em `api_keys`** (embedding do
+  PostgREST via a FK `api_key_id`) traz o nome da chave; quando `api_key_id` é
+  nulo, a tela mostra "interno". Filtros dinâmicos: `eq endpoint`, `eq
+  response_status`, janela de tempo (`gte/lte created_at` — **últimas 24h** por
+  padrão, ou o **dia inteiro** se `data` for informada), e busca `or(endpoint
+  ilike, api_key_id in (...))` — o segundo termo resolve antes os ids das
+  `api_keys` cujo `nome` casa com a busca. Ordena `created_at desc` e pagina com
+  `range()` (**server-side, 20/página**).
+- **`listarEndpoints()`** — `audit_log select('endpoint')` na janela atual →
+  lista distinta para o dropdown de endpoints.
+- Helper `dataHora(iso)` em `lib/format.js` → `dd/mm HH:mm:ss` (horário local).
+
+**RLS necessária** (a tabela `audit_log` hoje só é acessível pelo `service_role`;
+**ler pelo client anon do painel não funciona sem policy** — e o Claude Code não
+tem acesso ao banco para criá-la). Adicionar no Supabase uma policy de **leitura**
+para o usuário autenticado (o painel só lê; quem grava é o backend via
+service_role):
+
+```sql
+create policy "audit_log_select_auth" on audit_log
+  for select to authenticated using (true);
+```
+
+> O join `api_keys(nome)` também depende da policy de SELECT em `api_keys`
+> (`api_keys_select_auth`, já documentada acima). Não há policy de INSERT/UPDATE
+> para `authenticated` em `audit_log` — a escrita continua exclusiva do backend.
 
 ### Testes
 
