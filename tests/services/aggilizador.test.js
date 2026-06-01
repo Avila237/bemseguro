@@ -186,6 +186,18 @@ describe('montarPayload — novo formato (contrato CRM)', () => {
     expect(payload.cotacao.automoveis[0].anoFabricacao).toBe(2024);
   });
 
+  test('usa fipeResult.anoVeiculo como fallback quando anoModelo/anoFabricacao ausentes', () => {
+    const params = {
+      ...novoParams,
+      anoModelo: undefined,
+      anoFabricacao: undefined,
+      fipeResult: { ...fipeResult, anoVeiculo: 2021 },
+    };
+    const payload = montarPayload(params);
+    expect(payload.cotacao.automoveis[0].anoModelo).toBe(2021);
+    expect(payload.cotacao.automoveis[0].anoFabricacao).toBe(2021);
+  });
+
   test('usa chassi do bloco veiculo', () => {
     const payload = montarPayload(novoParams);
     expect(payload.cotacao.automoveis[0].chassi).toBe('9BWKL45U1SP009017');

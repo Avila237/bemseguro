@@ -27,19 +27,26 @@ const { body, session, calculos, saveCotacoesUrl, railwayToken } = workerData;
     email = segurado.email;
     cep = segurado.cep;
 
-    // resolverFipe espera dados_risco com { veiculo (descricao), fipe, chassi }
+    const anoModelo = parseInt(veiculo.anoModelo, 10) || null;
+    const anoFabricacao = parseInt(veiculo.anoFabricacao, 10) || null;
+
+    // resolverFipe espera dados_risco com { veiculo (descricao), fipe, chassi };
+    // incluimos anoModelo/anoFabricacao para que o ano do veiculo seja resolvido
+    // a partir do bloco veiculo (e nao apenas parseado da descricao).
     dadosRiscoFipe = {
       veiculo: veiculo.modelo || '',
       fipe: veiculo.fipe || undefined,
       chassi: veiculo.chassi || null,
+      anoModelo,
+      anoFabricacao,
     };
 
     montarExtra = {
       segurado,
       condutor,
       apoliceAnterior,
-      anoFabricacao: parseInt(veiculo.anoFabricacao) || null,
-      anoModelo: parseInt(veiculo.anoModelo) || null,
+      anoFabricacao,
+      anoModelo,
     };
   } else {
     ({ placa, cpf, nome, email, cep } = body);

@@ -130,7 +130,16 @@ async function buscarFipePorModelo(descricao, aggerToken) {
 
 async function resolverFipe({ dados_risco, placa, mcToken, aggerToken, log }) {
   const descricaoOriginal = dados_risco.veiculo || '';
-  const anoVeiculo = require('../utils/parsers').extrairAnoVeiculo(descricaoOriginal);
+  // Ano do veiculo: o formato v2 traz anoModelo/anoFabricacao explicitos no bloco
+  // veiculo (preferenciais). Fallback (formato legado): extrai do final da
+  // descricao (ex.: "... Compass 2023"). Sem isso, modelos v2 sem ano no texto
+  // (ex.: "VOLKSWAGEN - SAVEIRO - ROBUST 1.6") logavam ano=null.
+  const anoExplicito =
+    parseInt(dados_risco.anoModelo, 10) ||
+    parseInt(dados_risco.anoFabricacao, 10) ||
+    parseInt(dados_risco.ano, 10) ||
+    null;
+  const anoVeiculo = anoExplicito || require('../utils/parsers').extrairAnoVeiculo(descricaoOriginal);
 
   // 1) Explicito
   if (dados_risco.fipe) {
