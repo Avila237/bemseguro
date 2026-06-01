@@ -2,15 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom
 import Layout from './components/Layout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import Login from './pages/Login.jsx';
-
-// Placeholder do conteudo protegido. Cada pagina sera adicionada depois em src/pages/.
-function ContentPlaceholder() {
-  return (
-    <div className="text-status-gray">
-      Selecione uma seção no menu lateral.
-    </div>
-  );
-}
+import Dashboard from './pages/Dashboard.jsx';
 
 export default function App() {
   return (
@@ -29,7 +21,7 @@ export default function App() {
           }
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<ContentPlaceholder />} />
+          <Route path="dashboard" element={<Dashboard />} />
           {/* As demais paginas serao registradas aqui conforme forem criadas */}
         </Route>
 

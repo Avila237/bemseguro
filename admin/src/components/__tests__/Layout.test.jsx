@@ -1,16 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, test, expect, vi } from 'vitest';
-
-// Layout consome o client Supabase para descobrir o usuario logado — mockamos.
-vi.mock('../../lib/supabase.js', () => ({
-  supabase: {
-    auth: {
-      getUser: vi.fn().mockResolvedValue({ data: { user: { email: 'admin@bemseguro.com' } } }),
-    },
-  },
-}));
-
+import { describe, test, expect } from 'vitest';
 import Layout from '../Layout.jsx';
 
 function renderAt(path, children) {
@@ -22,32 +12,18 @@ function renderAt(path, children) {
 }
 
 describe('Layout', () => {
-  test('compoe sidebar, topbar e area de conteudo', async () => {
-    renderAt('/', <div>Conteúdo da página</div>);
-    // sidebar (logo)
-    expect(screen.getByText('BemSeguro HUB')).toBeInTheDocument();
-    // topbar (botao)
-    expect(screen.getByRole('button', { name: 'Nova Cotação' })).toBeInTheDocument();
-    // conteudo (children)
+  test('renderiza a sidebar e o conteúdo (children)', () => {
+    renderAt('/dashboard', <div>Conteúdo da página</div>);
+    // sidebar (wordmark)
+    expect(screen.getByText('Seguro')).toBeInTheDocument();
+    expect(screen.getByText('Hub · Admin')).toBeInTheDocument();
+    // children
     expect(screen.getByText('Conteúdo da página')).toBeInTheDocument();
-    // aguarda o efeito de carregar o usuario assentar
-    await screen.findByText('admin@bemseguro.com');
   });
 
-  test('o titulo da topbar reflete a rota atual', async () => {
-    renderAt('/seguradoras', <div>x</div>);
-    expect(await screen.findByRole('heading', { name: 'Seguradoras' })).toBeInTheDocument();
-    await screen.findByText('admin@bemseguro.com');
-  });
-
-  test('rota raiz mostra o titulo Dashboard', async () => {
-    renderAt('/', <div>x</div>);
-    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
-    await screen.findByText('admin@bemseguro.com');
-  });
-
-  test('exibe o email do usuario carregado do Supabase', async () => {
-    renderAt('/', <div>x</div>);
-    expect(await screen.findByText('admin@bemseguro.com')).toBeInTheDocument();
+  test('renderiza os itens de navegação da sidebar', () => {
+    renderAt('/dashboard', <div>x</div>);
+    expect(screen.getByText('Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Ordens de Serviço')).toBeInTheDocument();
   });
 });

@@ -1,39 +1,36 @@
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { describe, test, expect, vi } from 'vitest';
+
+// Topbar busca o usuário logado via Supabase — mockamos.
+vi.mock('../../lib/supabase.js', () => ({
+  supabase: {
+    auth: {
+      getUser: vi.fn().mockResolvedValue({ data: { user: { email: 'admin@bemseguro.com' } } }),
+    },
+  },
+}));
+
 import Topbar from '../Topbar.jsx';
 
 describe('Topbar', () => {
-  test('exibe o titulo da pagina', () => {
-    render(<Topbar title="Seguradoras" />);
-    expect(screen.getByRole('heading', { name: 'Seguradoras' })).toBeInTheDocument();
+  test('exibe título e subtítulo da página', () => {
+    render(<Topbar title="Dashboard" subtitle="Visão geral" />);
+    expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(screen.getByText('Visão geral')).toBeInTheDocument();
   });
 
-  test('exibe o botao Nova Cotação', () => {
-    render(<Topbar title="Dashboard" />);
+  test('renderiza as ações passadas pela página', () => {
+    render(<Topbar title="Dashboard" actions={<button>Nova Cotação</button>} />);
     expect(screen.getByRole('button', { name: 'Nova Cotação' })).toBeInTheDocument();
   });
 
-  test('exibe o sino de notificacao', () => {
+  test('exibe o sino de alertas', () => {
     render(<Topbar title="Dashboard" />);
-    expect(screen.getByRole('button', { name: 'Notificações' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Alertas' })).toBeInTheDocument();
   });
 
-  test('exibe o nome do usuario e iniciais no avatar', () => {
-    render(<Topbar title="Dashboard" userName="Guilherme Avila" />);
-    expect(screen.getByText('Guilherme Avila')).toBeInTheDocument();
-    expect(screen.getByText('GA')).toBeInTheDocument();
-  });
-
-  test('usa "Admin" como nome padrao', () => {
+  test('exibe o e-mail do usuário carregado do Supabase', async () => {
     render(<Topbar title="Dashboard" />);
-    expect(screen.getByText('Admin')).toBeInTheDocument();
-  });
-
-  test('dispara onNovaCotacao ao clicar no botao', async () => {
-    const onNovaCotacao = vi.fn();
-    render(<Topbar title="Dashboard" onNovaCotacao={onNovaCotacao} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Nova Cotação' }));
-    expect(onNovaCotacao).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('admin@bemseguro.com')).toBeInTheDocument();
   });
 });

@@ -13,18 +13,19 @@ function renderAt(path) {
 }
 
 describe('Sidebar', () => {
-  test('exibe o logo BemSeguro HUB · ADMIN', () => {
-    renderAt('/');
-    expect(screen.getByText('BemSeguro HUB')).toBeInTheDocument();
-    expect(screen.getByText('Admin')).toBeInTheDocument();
+  test('exibe o wordmark BemSeguro · Hub · Admin', () => {
+    renderAt('/dashboard');
+    // "Bem" e "Seguro" são spans separados (Seguro em laranja)
+    expect(screen.getByText('Bem')).toBeInTheDocument();
+    expect(screen.getByText('Seguro')).toBeInTheDocument();
+    expect(screen.getByText('Hub · Admin')).toBeInTheDocument();
   });
 
   test('renderiza todos os itens do menu', () => {
-    renderAt('/');
+    renderAt('/dashboard');
     for (const item of NAV_ITEMS) {
       expect(screen.getByText(item.label)).toBeInTheDocument();
     }
-    // garante a lista esperada do design
     expect(NAV_ITEMS.map(i => i.label)).toEqual([
       'Dashboard',
       'Ordens de Serviço',
@@ -36,15 +37,15 @@ describe('Sidebar', () => {
     ]);
   });
 
-  test('item ativo recebe destaque laranja (bg-primary)', () => {
+  test('item ativo recebe aria-current=page', () => {
     renderAt('/seguradoras');
     const link = screen.getByText('Seguradoras').closest('a');
-    expect(link.className).toContain('bg-primary');
+    expect(link).toHaveAttribute('aria-current', 'page');
   });
 
-  test('itens inativos nao recebem o destaque laranja', () => {
+  test('itens inativos nao recebem aria-current', () => {
     renderAt('/seguradoras');
     const dashboard = screen.getByText('Dashboard').closest('a');
-    expect(dashboard.className).not.toContain('bg-primary');
+    expect(dashboard).not.toHaveAttribute('aria-current');
   });
 });

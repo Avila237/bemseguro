@@ -230,21 +230,31 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
 - **Ícones:** set stroke estilo lucide em `admin/src/components/Icons.jsx`.
 - **Geometria:** raios `--r-xs..xl`, sombras `--sh-sm..pop`.
 
-> Obs.: `tailwind.config.js` ainda define uma paleta hex aproximada
-> (`primary #E8723A`, `sidebar #1F2937`, etc.) usada por Sidebar/Topbar/Layout.
-> Telas implementadas a partir do design (ex.: Login) usam os tokens OKLCH de
-> `theme.css` diretamente. Convergir os dois é um TODO de polimento.
+> Obs.: Login, Dashboard e o shell (Sidebar/Topbar/Layout) usam os tokens OKLCH
+> de `theme.css`. O `tailwind.config.js` ainda traz uma paleta hex aproximada
+> (legado), mas as telas novas devem usar `theme.css`. Tailwind segue disponível
+> para utilitários pontuais.
 
 ### Componentes de layout
 
-- `Sidebar` — menu lateral com links (logo no topo, item ativo em laranja).
-- `Topbar` — título da página, botão "Nova Cotação", sino de notificação, avatar.
-- `Layout` — compõe sidebar + topbar + área de conteúdo.
+- `Sidebar` — menu lateral (wordmark BemSeguro + nav). Migrado para os tokens
+  OKLCH de `theme.css`; item ativo via `NavLink` (`aria-current`) com realce
+  laranja (`--brand-tint`/`--brand-text`) e barra lateral.
+- `Topbar` — título + subtítulo da página, **ações da própria tela** (`actions`),
+  sino de alertas e avatar com o e-mail do usuário (de `supabase.auth.getUser`).
+  Migrado para tokens OKLCH.
+- `Page` — wrapper de tela: renderiza a `Topbar` (com `title/subtitle/actions`)
+  + corpo rolável. Cada página usa `<Page>` para injetar suas ações no header.
+- `Layout` — shell: `Sidebar` + coluna de conteúdo (recebe o `Outlet`).
 - `ProtectedRoute` — verifica sessão Supabase Auth e redireciona para `/admin/login`.
+- `Ui.jsx` — primitivos compartilhados: `Card`, `StatusBadge`, `Bars`, `SegLogo`,
+  `Empty`, `Skeleton`.
+- `Icons.jsx` — set de ícones stroke (mapa `Icon` + exports nomeados).
 
 ### Rotas
 
 - `/admin/login` — tela de login (pública). Componente `pages/Login.jsx`.
+- `/admin/dashboard` — Dashboard (Tela 02). Componente `pages/Dashboard.jsx`.
 - Demais rotas ficam dentro do `Layout`, protegidas por `ProtectedRoute`.
 - `/admin/` redireciona para `/admin/dashboard`.
 
@@ -264,8 +274,27 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
     duas colunas (painel de marca laranja com gradiente/pills + formulário),
     inputs com ícone, mostrar/ocultar senha, botão primário com seta/spinner.
     Responsivo: abaixo de 860px a coluna de marca some (só o formulário).
-  - A implementar: Dashboard, Ordens, Nova Cotação, Seguradoras, Monitoring,
-    API Keys, Audit Log.
+  - `Dashboard.jsx` — Tela 02. 5 KPIs (OS hoje, Cotando, Cotado c/ %, Pendente,
+    Com erro), card "Cotações recebidas hoje" (nº + média + barras de 14 dias),
+    card "Alertas" (OS travadas > 10min + erros, clicáveis), tabela "Últimas OS"
+    e ranking "Melhor taxa de retorno". Loading skeletons, **auto-refresh a cada
+    60s**, botão "Atualizar", estado vazio amigável e estado de erro.
+  - A implementar: Ordens, Nova Cotação, Seguradoras, Monitoring, API Keys,
+    Audit Log.
+
+### Queries Supabase (Dashboard)
+
+Em `admin/src/lib/dashboard.js` (`carregarDashboard()`), via client anon sob RLS
+do usuário autenticado:
+
+- `os_cotacao` `created_at >= início do dia` → contadores por status (hoje).
+- `os_cotacao` `order created_at desc limit 5` → tabela "Últimas OS"; o veículo
+  sai de `dados_risco` (suporta formato novo/legado) e o nº de OS deriva do uuid.
+- `cotacoes` `created_at >= 14 dias` → total de hoje, série diária (barras) e
+  ranking por seguradora (taxa = OS retornadas / OS despachadas no dia).
+- `cotacoes` `os_id in (últimas)` → melhor preço (menor prêmio) por OS.
+- `os_cotacao` `status in ('cotando','erro')` → alertas (travadas > 10min via
+  `updated_at`; erros recentes via `error_message`).
 
 ### Testes
 

@@ -233,6 +233,45 @@ a:hover { text-decoration: underline; }
 .toggle.on.blue { background: var(--blue); }
 
 /* ============================================================
+   Tables
+   ============================================================ */
+.table { width: 100%; border-collapse: collapse; }
+.table thead th {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-mute); text-align: left; padding: 11px 14px;
+  border-bottom: 1px solid var(--border); white-space: nowrap; background: var(--surface);
+}
+.table tbody td { padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 13.5px; vertical-align: middle; }
+.table tbody tr { transition: background .1s; }
+.table tbody tr:hover { background: var(--bg-sunken); cursor: pointer; }
+.table tbody tr:last-child td { border-bottom: none; }
+.table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   KPI stat
+   ============================================================ */
+.stat-grid { display: grid; gap: 14px; }
+.stat {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md);
+  padding: 16px 18px; display: flex; flex-direction: column; gap: 10px;
+}
+.stat-top { display: flex; align-items: center; justify-content: space-between; }
+.stat-label { font-size: 12px; font-weight: 500; color: var(--text-mute); }
+.stat-value { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.stat-sub { font-size: 12px; color: var(--text-mute); display: flex; align-items: center; gap: 5px; }
+.stat-ico { width: 30px; height: 30px; border-radius: var(--r-sm); display: grid; place-items: center; }
+.stat-ico svg { width: 16px; height: 16px; }
+
+/* ============================================================
+   Skeleton (loading)
+   ============================================================ */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--bg-sunken) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%; animation: shimmer 1.3s infinite; border-radius: var(--r-xs);
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ============================================================
    Utilities
    ============================================================ */
 .row { display: flex; align-items: center; }
