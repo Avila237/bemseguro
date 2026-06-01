@@ -9,6 +9,7 @@ import NovaCotacao from './pages/NovaCotacao.jsx';
 import Seguradoras from './pages/Seguradoras.jsx';
 import ApiKeys from './pages/ApiKeys.jsx';
 import AuditLog from './pages/AuditLog.jsx';
+import Monitoring from './pages/Monitoring.jsx';
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="ordens/:id" element={<DetalheOS />} />
           <Route path="nova-cotacao" element={<NovaCotacao />} />
           <Route path="seguradoras" element={<Seguradoras />} />
+          <Route path="monitoring" element={<Monitoring />} />
           <Route path="api-keys" element={<ApiKeys />} />
           <Route path="audit-log" element={<AuditLog />} />
           {/* As demais paginas serao registradas aqui conforme forem criadas */}

@@ -96,6 +96,7 @@ const DEFS = {
     'M9.5 5.2A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-2.2 3',
   ],
   inbox: ['M3 12h5l1.5 3h5l1.5-3h5', 'M3 12V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6'],
+  wifi: ['M5 12.5a10 10 0 0 1 14 0', 'M8.2 15.8a5.5 5.5 0 0 1 7.6 0', L(12, 19.3, 12.01, 19.3)],
 };
 
 // Mapa de ícones por chave (usado pela Sidebar/Topbar via string).

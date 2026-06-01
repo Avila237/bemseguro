@@ -266,6 +266,7 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
 - `/admin/seguradoras` — Seguradoras (Tela 06). Componente `pages/Seguradoras.jsx`.
 - `/admin/api-keys` — API Keys (Tela 07). Componente `pages/ApiKeys.jsx`.
 - `/admin/audit-log` — Audit Log (Tela 08). Componente `pages/AuditLog.jsx`.
+- `/admin/monitoring` — Monitoring (Tela 09). Componente `pages/Monitoring.jsx`.
 - Demais rotas ficam dentro do `Layout`, protegidas por `ProtectedRoute`.
 - `/admin/` redireciona para `/admin/dashboard`.
 
@@ -328,7 +329,16 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
     5xx vermelho) e Duração (`ms`/`s`, realçada em vermelho acima de 1s). Rodapé
     "X chamadas · janela de 24h" + **paginação server-side (20/página)**.
     Skeleton no load e estado vazio. Botão "Exportar CSV" (placeholder).
-  - A implementar: Monitoring.
+  - `Monitoring.jsx` — Tela 09. Painel técnico de saúde da operação. Header com
+    badge de saúde do **Railway** (`GET /health` direto do browser — público, sem
+    auth) e botão "Atualizar". 4 cards de métricas (tempo médio de cotação, taxa
+    de sucesso global, sessão Aggilizador, erros 24h), gráfico "Cotações por dia"
+    (30 dias, barras CSS proporcionais ao máximo), "Taxa de sucesso por
+    seguradora" (barras horizontais) e lista "Erros recentes" (24h). **Queries
+    reais** (sem mock), skeleton no load, **auto-refresh a cada 60s** e estado de
+    erro. (O card "Sessão Aggilizador" segue **placeholder** — mesmo widget da
+    Sidebar/API Keys — até existir endpoint de TTL real.)
+  - Todas as telas do design (01–09) implementadas.
 
 - O badge ao lado de "Ordens de Serviço" na Sidebar mostra o total de OS com
   status `pendente`/`cotando` (via `lib/osStats.js`, atualizado a cada 60s).
@@ -521,6 +531,28 @@ create policy "audit_log_select_auth" on audit_log
 > O join `api_keys(nome)` também depende da policy de SELECT em `api_keys`
 > (`api_keys_select_auth`, já documentada acima). Não há policy de INSERT/UPDATE
 > para `authenticated` em `audit_log` — a escrita continua exclusiva do backend.
+
+### Queries Supabase (Monitoring)
+
+Em `admin/src/lib/monitoring.js`. `carregarMonitoring()` dispara as queries em
+paralelo (`Promise.all`) e agrega tudo em memória. **Fonte de dados por card:**
+
+| Card / bloco                       | Fonte                                                                 |
+|------------------------------------|-----------------------------------------------------------------------|
+| **Tempo médio de cotação (s)**     | `audit_log` `eq endpoint='/quote/auto'` `gte 14d` → média de `duration_ms` dos últimos 7 dias (em s). Delta "vs semana passada" = compara com os 7 dias anteriores (dias 7–14). |
+| **Taxa de sucesso global (%)**     | `os_cotacao` `gte 7d` → `count(status='cotado') / total`.             |
+| **Sessão Aggilizador**             | **Placeholder** (Ativa, "expira em 41:08 · cache 55min") — sem fonte real ainda (ver TODO do widget). |
+| **Erros (24h)**                    | `os_cotacao` `eq status='erro'` `gte 48h` → `count` na janela de 24h; delta = vs as 24h anteriores. |
+| **Cotações por dia (30 dias)**     | `cotacoes` `gte 30d` → agrupa `created_at` por dia (série de 30 posições; heights proporcionais ao máximo, últimos 5 dias em destaque laranja). |
+| **Taxa de sucesso por seguradora** | `cotacoes` `gte 30d` → por seguradora, `count(premio>0) / count(total)` (barras horizontais, ordenadas pela taxa). |
+| **Erros recentes (24h)**           | `os_cotacao` `eq status='erro'` `gte 48h` `order updated_at desc` → linhas das últimas 24h (`error_message`, `numeroOS(id)`, tempo relativo). A seguradora é exibida como **"Aggilizador"** (erros de OS são globais — não há seguradora associada à OS). |
+
+- **`checarRailway()`** — `fetch('https://bemseguro-production.up.railway.app/health')`
+  (GET público, sem auth, direto do browser). `true` se 2xx; `false` em erro de
+  rede/status → badge "Railway saudável" / "Railway indisponível" / "Verificando…".
+- Ícone `wifi` adicionado a `components/Icons.jsx` (card de sessão).
+- **RLS:** reusa as policies de SELECT já documentadas para `os_cotacao`,
+  `cotacoes`, `audit_log` (esta última ainda **pendente** — ver Audit Log acima).
 
 ### Testes
 
