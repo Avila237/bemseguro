@@ -20,6 +20,16 @@ describe('quote-worker', () => {
     expect(content).toContain('pollVersoes');
   });
 
+  test('chamada save-cotacoes envia Authorization Bearer com anon key', () => {
+    const fs = require('fs');
+    const workerPath = path.join(__dirname, '..', '..', 'src', 'workers', 'quote-worker.js');
+    const content = fs.readFileSync(workerPath, 'utf8');
+    // Gateway do Supabase exige Bearer <SUPABASE_ANON_KEY> alem do x-secret-token
+    expect(content).toContain('Authorization');
+    expect(content).toContain('Bearer ${process.env.SUPABASE_ANON_KEY}');
+    expect(content).toContain('x-secret-token');
+  });
+
   test('worker detecta novo formato e le os blocos estruturados', () => {
     const fs = require('fs');
     const workerPath = path.join(__dirname, '..', '..', 'src', 'workers', 'quote-worker.js');

@@ -105,6 +105,8 @@ const { body, session, calculos, saveCotacoesUrl, railwayToken } = workerData;
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            // Gateway do Supabase exige Bearer com a anon key em toda Edge Function
+            'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
             'x-secret-token': railwayToken,
           },
           body: JSON.stringify({ os_id, resultados }),
