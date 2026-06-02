@@ -585,12 +585,32 @@ SUPABASE_SERVICE_ROLE_KEY=<service role key>
 # Anthropic
 ANTHROPIC_API_KEY=<api key>
 
+# Sentry (monitoring de erros — vazio desativa)
+SENTRY_DSN=<dsn do projeto Sentry>
+
 # Ambiente
 NODE_ENV=production
 LOG_LEVEL=info
 ```
 
 Nunca commitar `.env`. O `.env.example` lista as variáveis sem valores.
+
+## Monitoring externo
+
+- **Uptime Robot** monitora `GET /health` a cada **5 min** (endpoint público, sem
+  auth) — alerta se o Railway cair.
+- **Sentry** captura exceptions não-tratadas do backend, configurado via env
+  `SENTRY_DSN`. Inicializado em `src/instrument.js`, carregado como **primeiro
+  require** de `src/index.js` (antes de qualquer outro módulo). Cobre: erros de
+  rota Express (`Sentry.setupExpressErrorHandler`), falhas dos Worker Threads de
+  cotação (`captureException` nos listeners `error`/`exit` em `routes/quote.js`,
+  tag `component: quote-worker`) e o retry esgotado do `calcularV2` em
+  `services/aggilizador.js` (tag `component: aggilizador, operation: calcularV2`;
+  o 401 de sessão é ignorado por ser fluxo tratado). `tracesSampleRate: 0` e
+  `sendDefaultPii: false` (sem performance tracing nem PII).
+- Para **testar localmente**, basta setar `SENTRY_DSN` no `.env`. Sem a variável,
+  o Sentry fica **desativado** (log `[sentry] SENTRY_DSN não configurado`) e a
+  aplicação roda normalmente.
 
 ## Padrões de código
 

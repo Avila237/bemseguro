@@ -1,5 +1,6 @@
 const { CORRETORA_ID } = require('../config/seguradoras');
 const { retryComBackoff } = require('../utils/retry');
+const Sentry = require('@sentry/node');
 
 const AGGER_API = 'https://api-prod.aggilizador.com.br';
 const MULTICALCULO_API = 'https://api.multicalculo.net';
@@ -211,30 +212,42 @@ async function dispararCotacao(payload, aggerToken) {
   // Retry exponencial em falhas transitorias (502/503/504, timeout, rede). O 401
   // (sessao expirada) e os demais 4xx NAO sao retentados — isRetryable os trata
   // como permanentes — e propagam para o worker (que renova a sessao no 401).
-  return retryComBackoff(async () => {
-    const res = await fetch(`${AGGER_API}/calculo/calcularV2`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': aggerToken,
-      },
-      body: JSON.stringify(payload),
+  try {
+    return await retryComBackoff(async () => {
+      const res = await fetch(`${AGGER_API}/calculo/calcularV2`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': aggerToken,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.status === 401) {
+        throw Object.assign(new Error('Token expirado'), { status: 401 });
+      }
+      if (!res.ok) {
+        throw Object.assign(new Error(`calcularV2 HTTP ${res.status}`), { status: res.status });
+      }
+
+      const data = await res.json();
+      const versaoId = Array.isArray(data)
+        ? (data[0] && data[0].idIntegracao)
+        : data.idIntegracao;
+
+      return { status: res.status, versaoId, data };
     });
-
-    if (res.status === 401) {
-      throw Object.assign(new Error('Token expirado'), { status: 401 });
+  } catch (err) {
+    // Retry esgotado (ou erro permanente). Captura no Sentry antes de re-lancar —
+    // exceto o 401, que e fluxo esperado (renovacao de sessao tratada pelo worker)
+    // e so geraria ruido.
+    if (err.status !== 401) {
+      Sentry.captureException(err, {
+        tags: { component: 'aggilizador', operation: 'calcularV2' },
+      });
     }
-    if (!res.ok) {
-      throw Object.assign(new Error(`calcularV2 HTTP ${res.status}`), { status: res.status });
-    }
-
-    const data = await res.json();
-    const versaoId = Array.isArray(data)
-      ? (data[0] && data[0].idIntegracao)
-      : data.idIntegracao;
-
-    return { status: res.status, versaoId, data };
-  });
+    throw err;
+  }
 }
 
 async function pollVersoes(versaoId, mcToken, log) {

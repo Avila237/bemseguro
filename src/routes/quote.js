@@ -6,6 +6,7 @@ const { getSession, invalidateSession } = require('../services/session');
 const { getCalculos } = require('../config/seguradoras');
 const { createLogger } = require('../utils/logger');
 const workerRegistry = require('../services/workerRegistry');
+const Sentry = require('@sentry/node');
 
 const router = Router();
 const log = createLogger({ scope: 'quote' });
@@ -65,10 +66,20 @@ router.post('/quote/auto', internalAuth, async (req, res) => {
   });
   worker.on('error', err => {
     log.error(`Erro no worker | OS=${body.os_id} | Placa=${placa} | ${err.message}`);
+    Sentry.captureException(err, {
+      tags: { component: 'quote-worker' },
+      extra: { os_id: body.os_id, placa },
+    });
   });
   worker.on('exit', code => {
     workerRegistry.remover(worker);
-    if (code !== 0) log.error(`Worker encerrou com codigo ${code} | OS=${body.os_id} | Placa=${placa}`);
+    if (code !== 0) {
+      log.error(`Worker encerrou com codigo ${code} | OS=${body.os_id} | Placa=${placa}`);
+      Sentry.captureException(new Error(`Worker encerrou com codigo ${code}`), {
+        tags: { component: 'quote-worker' },
+        extra: { os_id: body.os_id, placa, exitCode: code },
+      });
+    }
   });
 
   return res.status(202).json({ success: true, message: 'Cotação em processamento' });

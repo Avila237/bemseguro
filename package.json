@@ -19,9 +19,10 @@
     "node": ">=20"
   },
   "dependencies": {
-    "express": "^4.21.0",
+    "@sentry/node": "^10.56.0",
     "@supabase/supabase-js": "^2.45.0",
     "bcryptjs": "^2.4.3",
+    "express": "^4.21.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

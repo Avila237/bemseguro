@@ -1,4 +1,9 @@
+// Instrumentacao do Sentry — TEM que ser o primeiro require do processo, antes
+// de qualquer outro modulo, para instrumentar tudo que e carregado depois.
+require('./instrument');
+
 const express = require('express');
+const Sentry = require('@sentry/node');
 const path = require('path');
 const { createLogger } = require('./utils/logger');
 const { getSession } = require('./services/session');
@@ -35,6 +40,10 @@ app.use('/admin', express.static(ADMIN_DIST));
 app.get(/^\/admin(\/.*)?$/, (req, res) => {
   res.sendFile(path.join(ADMIN_DIST, 'index.html'));
 });
+
+// Error handler do Sentry: depois de TODAS as rotas e antes de qualquer outro
+// middleware de erro. Captura excecoes nao-tratadas das rotas Express.
+Sentry.setupExpressErrorHandler(app);
 
 const msSleep = ms => new Promise(r => setTimeout(r, ms));
 
