@@ -246,6 +246,10 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
   laranja (`--brand-tint`/`--brand-text`) e barra lateral.
 - `Topbar` — título + subtítulo da página, **ações da própria tela** (`actions`),
   sino de alertas e avatar com o e-mail do usuário (de `supabase.auth.getUser`).
+  O avatar é um botão que abre um **dropdown** (ancorado à direita, fecha com
+  clique fora ou `ESC`) com duas opções: **Meu perfil** (placeholder — mostra um
+  `alert` de "em desenvolvimento") e **Sair** (chama `supabase.auth.signOut()`,
+  mostra "Saindo…" e redireciona para `/admin/login` via `useNavigate`).
   Migrado para tokens OKLCH.
 - `Page` — wrapper de tela: renderiza a `Topbar` (com `title/subtitle/actions`)
   + corpo rolável. Cada página usa `<Page>` para injetar suas ações no header.

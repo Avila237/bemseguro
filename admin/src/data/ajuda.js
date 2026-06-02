@@ -79,7 +79,13 @@ export const SECOES = [
       { type: 'p', text: 'No piloto não há tela de cadastro dentro do Hub. Aqui, **“administrador” não é um papel do app** (o piloto usa um acesso único) — é simplesmente **a pessoa que tem acesso ao Supabase** e cria/edita as contas lá. Se você precisa de um novo acesso para um colega, peça a essa pessoa.' },
       { type: 'p', text: 'Cada pessoa deve ter o **seu próprio login**. Tudo que acontece no sistema fica registrado no **Audit Log** com o nome de quem fez — senhas compartilhadas tornam impossível saber quem fez o quê.' },
       { type: 'h3', text: 'Encerrar a sessão' },
-      { type: 'p', text: 'O painel ainda **não tem botão “Sair”**. Para encerrar a sessão em uma máquina compartilhada, **feche o navegador**. Um botão de Sair será adicionado em uma versão futura.' },
+      { type: 'p', text: 'Clique no **seu avatar** (canto superior direito, com suas iniciais) para abrir o menu e escolha **Sair**. O sistema encerra a sessão no Supabase e leva você de volta à tela de login. **Sempre saia** ao terminar de usar um computador compartilhado.' },
+      { type: 'steps', items: [
+        'Clique no avatar com suas iniciais, no topo à direita.',
+        'No menu que abre, clique em **Sair**.',
+        'Aguarde o **“Saindo…”** — você é redirecionado para a tela de login.',
+      ] },
+      { type: 'p', text: 'O mesmo menu tem a opção **Meu perfil**, ainda **em desenvolvimento**: por enquanto os dados do usuário só são editados pelo administrador no Supabase.' },
     ],
   },
 
