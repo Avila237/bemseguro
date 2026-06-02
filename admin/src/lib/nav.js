@@ -8,6 +8,7 @@ export const NAV_ITEMS = [
   { to: '/monitoring', label: 'Monitoring', icon: 'activity' },
   { to: '/api-keys', label: 'API Keys', icon: 'key' },
   { to: '/audit-log', label: 'Audit Log', icon: 'history' },
+  { to: '/ajuda', label: 'Ajuda & Docs', icon: 'help' },
 ];
 
 // Resolve o título da página a partir do pathname (sem o basename /admin).

@@ -38,6 +38,7 @@ describe('Sidebar', () => {
       'Monitoring',
       'API Keys',
       'Audit Log',
+      'Ajuda & Docs',
     ]);
   });
 

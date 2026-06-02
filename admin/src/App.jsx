@@ -10,6 +10,7 @@ import Seguradoras from './pages/Seguradoras.jsx';
 import ApiKeys from './pages/ApiKeys.jsx';
 import AuditLog from './pages/AuditLog.jsx';
 import Monitoring from './pages/Monitoring.jsx';
+import Ajuda from './pages/Ajuda.jsx';
 
 export default function App() {
   return (
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="monitoring" element={<Monitoring />} />
           <Route path="api-keys" element={<ApiKeys />} />
           <Route path="audit-log" element={<AuditLog />} />
+          <Route path="ajuda" element={<Ajuda />} />
           {/* As demais paginas serao registradas aqui conforme forem criadas */}
         </Route>
 

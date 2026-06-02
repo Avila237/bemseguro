@@ -267,6 +267,7 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
 - `/admin/api-keys` — API Keys (Tela 07). Componente `pages/ApiKeys.jsx`.
 - `/admin/audit-log` — Audit Log (Tela 08). Componente `pages/AuditLog.jsx`.
 - `/admin/monitoring` — Monitoring (Tela 09). Componente `pages/Monitoring.jsx`.
+- `/admin/ajuda` — Ajuda & Documentação (Tela 11). Componente `pages/Ajuda.jsx`.
 - Demais rotas ficam dentro do `Layout`, protegidas por `ProtectedRoute`.
 - `/admin/` redireciona para `/admin/dashboard`.
 
@@ -338,10 +339,46 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
     reais** (sem mock), skeleton no load, **auto-refresh a cada 60s** e estado de
     erro. (O card "Sessão Aggilizador" segue **placeholder** — mesmo widget da
     Sidebar/API Keys — até existir endpoint de TTL real.)
-  - Todas as telas do design (01–09) implementadas.
+  - `Ajuda.jsx` — Tela 11 (Central de Ajuda & Documentação). Layout em duas
+    colunas: índice navegável à esquerda (busca com **debounce 300ms**, 9 seções
+    numeradas 01–09 com ícone, item ativo realçado, card "Precisa de ajuda?" com
+    atalho para o Runbook) + artigo à direita. Mostra **um artigo por vez** na
+    tela (clique no índice ou no botão "Próximo" troca o artigo); todos os
+    artigos ficam no DOM para o **`@media print`** revelar o guia inteiro.
+    Cada artigo tem breadcrumb, "Seção XX", título, corpo (parágrafos, listas,
+    passos, callouts info/atenção/perigo/dica, blocos de código com copiar,
+    tabelas, glossário, FAQ, placeholders de screenshot) e footer com
+    "Próximo" + "Última atualização". Botão **"Imprimir guia"** no header e
+    **"Imprimir runbook"** na seção 08 (CSS de impressão esconde sidebar/topbar/
+    índice). Conteúdo vem de `data/ajuda.js` (ver abaixo). **Sem dados do
+    Supabase** — é conteúdo estático.
+  - Todas as telas do design (01–09 + 11/Ajuda) implementadas.
 
 - O badge ao lado de "Ordens de Serviço" na Sidebar mostra o total de OS com
   status `pendente`/`cotando` (via `lib/osStats.js`, atualizado a cada 60s).
+
+### Conteúdo da Ajuda (Tela 11)
+
+O texto das 9 seções vive **separado do componente**, como estrutura de dados em
+`admin/src/data/ajuda.js` (exporta `SECOES` + `LAST_UPDATED`). O `Ajuda.jsx` só
+renderiza — para editar/adicionar conteúdo, mexa **apenas no `data/ajuda.js`**.
+
+- Cada seção: `{ id, num, label, icon, kw, title, lead, blocks }`. `icon` é uma
+  chave de `components/Icons.jsx`; `kw` são palavras-chave extras para a busca do
+  índice (a busca casa em `label + title + kw`).
+- `blocks` é uma lista de blocos tipados renderizados por um `Block` em
+  `Ajuda.jsx`. Tipos: `p`, `h3` (com `id` opcional p/ âncora), `ul`, `steps`,
+  `callout` (`variant: info|atencao|perigo|dica`), `code` (`label`/`lang`/`code`),
+  `shot` (placeholder de screenshot), `glossary`, `faq`, `table`, `statuses`
+  (badges de status), `printRunbook` (botão de imprimir só o runbook).
+- **Markup inline** dentro dos textos: `**negrito**`, `` `mono` ``, `{kbd:F5}`,
+  `{badge:cotando|Cotando}` (badge de status), `{ok:Ativa}` (verde) e `{star}`
+  (asterisco laranja de campo obrigatório). O campo `code` é renderizado cru.
+- Para adicionar uma seção nova: acrescente um objeto em `SECOES` (novo `id`/`num`)
+  — ela aparece automaticamente no índice e na navegação "Próximo". Para um tipo de
+  bloco novo, adicione o `case` correspondente no `Block` de `Ajuda.jsx`.
+- A data de "Última atualização" exibida nos artigos vem de `LAST_UPDATED`.
+- A rota é `/admin/ajuda` (item "Ajuda & Docs" na Sidebar, via `lib/nav.js`).
 
 ### Queries Supabase (Dashboard)
 
