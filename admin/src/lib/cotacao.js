@@ -23,6 +23,7 @@ export async function lookupPlaca(placa) {
     anoFabricacao: data.anoFabricacao != null ? String(data.anoFabricacao) : '',
     fipe: data.fipe || '',
     chassi: data.chassi || '',
+    fabricante: data.fabricante != null ? String(data.fabricante) : '',
   };
 }
 
@@ -57,6 +58,7 @@ export function montarPayloadV2(f) {
       anoFabricacao: f.anoFabricacao || '',
       chassi: f.chassi || '',
       fipe: f.fipe || '',
+      fabricante: f.fabricante || '',
     },
     condutor: {
       nome: condNome || '',

@@ -101,6 +101,66 @@ describe('resolverFipe — ano do veiculo', () => {
   });
 });
 
+describe('resolverFipe — fabricante no FIPE explicito', () => {
+  afterEach(() => {
+    if (global.fetch && global.fetch.mockRestore) global.fetch.mockRestore();
+    delete global.fetch;
+  });
+
+  test('usa dados_risco.fabricante quando ja informado (sem lookup)', async () => {
+    const fetchSpy = jest.fn();
+    global.fetch = fetchSpy;
+    const result = await resolverFipe({
+      dados_risco: { veiculo: 'VW Polo', fipe: '0059549', fabricante: 59 },
+      placa: 'JCU9D37', mcToken: 'mc-token', aggerToken: 'agger-token', log: logStub,
+    });
+    expect(result.fipe).toBe('0059549');
+    expect(result.fabricante).toBe(59);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test('sem fabricante: faz lookup rapido pela placa (buscaPlaca)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ fipe: '0059549', codFabr: 59, modelo: 'VW POLO', anoMod: '2024' }),
+    });
+    const result = await resolverFipe({
+      dados_risco: { veiculo: 'VW Polo', fipe: '0059549' },
+      placa: 'JCU9D37', mcToken: 'mc-token', aggerToken: null, log: logStub,
+    });
+    // FIPE explicito permanece intacto; so o fabricante veio do lookup.
+    expect(result.fipe).toBe('0059549');
+    expect(result.fabricante).toBe(59);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch.mock.calls[0][0]).toContain('/calculo/buscaPlaca');
+  });
+
+  test('sem fabricante e sem placa: fallback pelo modelo (fipeModelo)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ([{ id: '005-954-9', fipeFabricante: { id: '59' }, modelo: 'VW POLO', fipeValores: [] }]),
+    });
+    const result = await resolverFipe({
+      dados_risco: { veiculo: 'Volkswagen Polo', fipe: '0059549' },
+      placa: '', mcToken: null, aggerToken: 'agger-token', log: logStub,
+    });
+    expect(result.fipe).toBe('0059549');
+    expect(result.fabricante).toBe(59);
+    expect(global.fetch.mock.calls[0][0]).toContain('/fipeModelo');
+  });
+
+  test('sem fabricante e sem tokens: mantem fabricante null', async () => {
+    const result = await resolverFipe({
+      dados_risco: { veiculo: 'VW Polo', fipe: '0059549' },
+      placa: 'JCU9D37', mcToken: null, aggerToken: null, log: logStub,
+    });
+    expect(result.fipe).toBe('0059549');
+    expect(result.fabricante).toBeNull();
+  });
+});
+
 describe('FIPE_MAP', () => {
   test('contem todas as 8 seguradoras de referencia', () => {
     expect(FIPE_MAP.length).toBeGreaterThan(30);

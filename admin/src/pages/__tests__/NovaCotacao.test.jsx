@@ -63,7 +63,7 @@ describe('NovaCotacao', () => {
   });
 
   test('lookup de placa preenche o veículo ao sair do campo', async () => {
-    lookupPlaca.mockResolvedValue({ encontrado: true, modelo: 'VW SAVEIRO ROBUST 1.6', anoModelo: '2024', anoFabricacao: '2024', fipe: '005340-7', chassi: '9BWKL45U1SP009017' });
+    lookupPlaca.mockResolvedValue({ encontrado: true, modelo: 'VW SAVEIRO ROBUST 1.6', anoModelo: '2024', anoFabricacao: '2024', fipe: '005340-7', chassi: '9BWKL45U1SP009017', fabricante: '59' });
     renderPage();
     const placa = screen.getByLabelText('Placa');
     await userEvent.type(placa, 'JCU9D37');
@@ -71,6 +71,21 @@ describe('NovaCotacao', () => {
     await waitFor(() => expect(lookupPlaca).toHaveBeenCalledWith('JCU9D37'));
     expect(await screen.findByDisplayValue('VW SAVEIRO ROBUST 1.6')).toBeInTheDocument();
     expect(screen.getByLabelText('Cód. FIPE')).toHaveValue('005340-7');
+  });
+
+  test('o fabricante do lookup é enviado no payload do run-quote', async () => {
+    lookupPlaca.mockResolvedValue({ encontrado: true, modelo: 'VW SAVEIRO ROBUST 1.6', anoModelo: '2024', anoFabricacao: '2024', fipe: '005340-7', chassi: '9BWKL45U1SP009017', fabricante: '59' });
+    renderPage();
+    await preencherObrigatorios();
+    fireEvent.blur(screen.getByLabelText('Placa'));
+    await waitFor(() => expect(lookupPlaca).toHaveBeenCalled());
+    // aguarda o auto-preenchimento concluir (modelo refletido na tela)
+    expect(await screen.findByDisplayValue('VW SAVEIRO ROBUST 1.6')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /criar os/i }));
+    await waitFor(() => expect(criarCotacao).toHaveBeenCalledTimes(1));
+    const payload = criarCotacao.mock.calls[0][0];
+    expect(payload.veiculo.fabricante).toBe('59');
   });
 
   test('validação bloqueia submit e destaca campos obrigatórios', async () => {
@@ -110,14 +125,14 @@ describe('montarPayloadV2', () => {
     const p = montarPayloadV2({
       nome: 'Maria Souza', cpf: '123.456.789-00', email: 'm@x.com', telefone: '(55) 99999-0000',
       origem: 'CRM', prioridade: 'Alta', observacoes: 'teste',
-      ramo: 'auto', placa: 'jcu9d37', modelo: 'VW Saveiro', anoModelo: '2024', anoFabricacao: '2024', chassi: '9BWK', fipe: '005340-7',
+      ramo: 'auto', placa: 'jcu9d37', modelo: 'VW Saveiro', anoModelo: '2024', anoFabricacao: '2024', chassi: '9BWK', fipe: '005340-7', fabricante: '59',
       cepPernoite: '98700-000', condIgual: true,
       dataNascimento: '1990-05-20', sexo: 'Feminino', estadoCivil: 'Solteiro',
       apSeguradora: 'Porto Seguro', apNumero: '31.55', apClasse: '7', apSinistro: true,
     });
     expect(p.ramo).toBe('auto');
     expect(p.segurado).toMatchObject({ nome: 'Maria Souza', cpf: '12345678900', sexo: 'F', estadoCivil: 'solteiro', dataNascimento: '20/05/1990', cep: '98700000' });
-    expect(p.veiculo).toMatchObject({ placa: 'JCU9D37', modelo: 'VW Saveiro', fipe: '005340-7', anoModelo: '2024' });
+    expect(p.veiculo).toMatchObject({ placa: 'JCU9D37', modelo: 'VW Saveiro', fipe: '005340-7', anoModelo: '2024', fabricante: '59' });
     expect(p.condutor).toMatchObject({ nome: 'Maria Souza', relacaoSegurado: 'segurado', sexo: 'F' });
     expect(p.apoliceAnterior).toMatchObject({ seguradora: 'Porto Seguro', classeBonus: 7, sinistro: true });
   });

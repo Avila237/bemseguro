@@ -144,9 +144,37 @@ async function resolverFipe({ dados_risco, placa, mcToken, aggerToken, log }) {
   // 1) Explicito
   if (dados_risco.fipe) {
     log.info(`FIPE explicito: ${dados_risco.fipe}`);
+    let fabricante = dados_risco.fabricante || null;
+
+    // O FIPE explicito nao passa pela API de lookup, entao o codigo do fabricante
+    // pode vir vazio. Como ele e necessario no payload do calculo, fazemos um
+    // lookup rapido so para obte-lo: primeiro pela placa (buscaPlaca), com
+    // fallback pelo modelo (fipeModelo). Mantemos o FIPE explicito intacto.
+    if (!fabricante) {
+      if (placa && mcToken) {
+        try {
+          const porPlaca = await buscarFipePorPlaca(placa, mcToken, log);
+          if (porPlaca && porPlaca.fabricante) {
+            fabricante = porPlaca.fabricante;
+            log.info(`Fabricante via placa: ${fabricante}`);
+          }
+        } catch (e) {
+          if (e.status === 401) throw e;
+          log.warn(`Lookup placa (fabricante) falhou: ${e.message}`);
+        }
+      }
+      if (!fabricante && descricaoOriginal && aggerToken) {
+        const porModelo = await buscarFipePorModelo(descricaoOriginal, aggerToken);
+        if (porModelo && porModelo.fabricante) {
+          fabricante = porModelo.fabricante;
+          log.info(`Fabricante via modelo: ${fabricante}`);
+        }
+      }
+    }
+
     return {
       fipe: dados_risco.fipe,
-      fabricante: dados_risco.fabricante || null,
+      fabricante,
       modelo: descricaoOriginal,
       valReferenciado: dados_risco.valReferenciado || 0,
       chassi: dados_risco.chassi || null,

@@ -21,7 +21,7 @@ const ESTADO = {
   leadNovo: true,
   nome: '', cpf: '', email: '', telefone: '', origem: 'Manual',
   ramo: 'auto', prioridade: 'Média', observacoes: '',
-  placa: '', modelo: '', anoModelo: '', anoFabricacao: '', chassi: '', fipe: '', cepPernoite: '',
+  placa: '', modelo: '', anoModelo: '', anoFabricacao: '', chassi: '', fipe: '', fabricante: '', cepPernoite: '',
   condIgual: true, condutorNome: '', condutorCpf: '',
   dataNascimento: '', sexo: '', estadoCivil: '',
   apSeguradora: '', apNumero: '', apClasse: '0', apSinistro: false,
@@ -97,6 +97,7 @@ export default function NovaCotacao() {
           anoFabricacao: r.anoFabricacao || f.anoFabricacao,
           fipe: r.fipe || f.fipe,
           chassi: r.chassi || f.chassi,
+          fabricante: r.fabricante || f.fabricante,
         }));
         setLookup('ok');
         setToast('Placa encontrada · dados preenchidos');
