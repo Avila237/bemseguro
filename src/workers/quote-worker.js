@@ -116,6 +116,11 @@ const { body, session, calculos, saveCotacoesUrl, railwayToken } = workerData;
 
     if (os_id && saveCotacoesUrl) {
       try {
+        const saveBody = { os_id, resultados };
+        // Confirma o tamanho real do corpo enviado a save-cotacoes (debug do erro
+        // "Unterminated string in JSON at position 3000"). O fetch calcula o
+        // Content-Length a partir deste mesmo JSON.stringify, sem corte.
+        console.log('[worker] save-cotacoes body length:', JSON.stringify(saveBody).length);
         const saveRes = await fetch(saveCotacoesUrl, {
           method: 'POST',
           headers: {
@@ -124,7 +129,7 @@ const { body, session, calculos, saveCotacoesUrl, railwayToken } = workerData;
             'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
             'x-secret-token': railwayToken,
           },
-          body: JSON.stringify({ os_id, resultados }),
+          body: JSON.stringify(saveBody),
         });
         const saveData = await saveRes.json();
         log.info(`save-cotacoes: status=${saveRes.status} inseridos=${saveData.inseridos}`);

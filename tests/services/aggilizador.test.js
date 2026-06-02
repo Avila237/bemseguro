@@ -1,4 +1,4 @@
-const { montarPayload } = require('../../src/services/aggilizador');
+const { montarPayload, detalhesSeguro } = require('../../src/services/aggilizador');
 
 describe('montarPayload', () => {
   const baseParams = {
@@ -279,5 +279,40 @@ describe('montarPayload — novo formato (contrato CRM)', () => {
   test('pctAjuste continua 100', () => {
     const payload = montarPayload(novoParams);
     expect(payload.cotacao.automoveis[0].pctAjuste).toBe(100);
+  });
+});
+
+describe('detalhesSeguro — sempre JSON valido (bug "Unterminated string at 3000")', () => {
+  test('objeto pequeno: retorna o JSON completo e parseavel', () => {
+    const c = { id: 1, nome: 'HDI', premio: 1234.5 };
+    const out = detalhesSeguro(c);
+    expect(() => JSON.parse(out)).not.toThrow();
+    expect(JSON.parse(out)).toEqual(c);
+  });
+
+  test('objeto grande: trunca mas continua sendo JSON valido', () => {
+    // Objeto que estoura o teto de 3000 chars (regressao do erro real).
+    const c = { id: 99, blob: 'x'.repeat(5000), nome: 'Seguradora' };
+    const out = detalhesSeguro(c);
+    // O cerne do bug: o resultado tem que ser parseavel sem lancar.
+    expect(() => JSON.parse(out)).not.toThrow();
+    const parsed = JSON.parse(out);
+    expect(parsed.truncado).toBe(true);
+    expect(parsed.tamanhoOriginal).toBe(JSON.stringify(c).length);
+    expect(typeof parsed.raw).toBe('string');
+  });
+
+  test('o substring(0,3000) ingenuo produziria JSON invalido (contraprova)', () => {
+    const c = { id: 99, blob: 'x'.repeat(5000) };
+    const ingenuo = JSON.stringify(c).substring(0, 3000);
+    expect(() => JSON.parse(ingenuo)).toThrow(); // era exatamente o que quebrava
+    expect(() => JSON.parse(detalhesSeguro(c))).not.toThrow();
+  });
+
+  test('respeita teto customizado e nunca quebra o JSON', () => {
+    const c = { texto: 'a'.repeat(200) };
+    const out = detalhesSeguro(c, 50);
+    expect(out.length).toBeLessThanOrEqual(JSON.stringify(c).length);
+    expect(() => JSON.parse(out)).not.toThrow();
   });
 });

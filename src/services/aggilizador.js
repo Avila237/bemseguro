@@ -3,6 +3,22 @@ const { CORRETORA_ID } = require('../config/seguradoras');
 const AGGER_API = 'https://api-prod.aggilizador.com.br';
 const MULTICALCULO_API = 'https://api.multicalculo.net';
 
+// Limite de tamanho do campo `detalhes` (jsonb) para nao inflar a row.
+const DETALHES_LIMITE = 3000;
+
+// Serializa os dados brutos da seguradora num JSON SEMPRE valido, respeitando um
+// teto de tamanho. NUNCA usar `JSON.stringify(c).substring(0, N)`: cortar uma
+// string JSON num offset arbitrario produz JSON malformado (string/objeto sem
+// fechamento) e a Edge Function save-cotacoes falha com
+// "Unterminated string in JSON at position 3000" ao fazer JSON.parse. Quando o
+// objeto excede o teto, embrulhamos o trecho cru numa STRING (devidamente
+// escapada) dentro de um objeto valido, em vez de devolver JSON quebrado.
+function detalhesSeguro(c, limite = DETALHES_LIMITE) {
+  const json = JSON.stringify(c);
+  if (json.length <= limite) return json;
+  return JSON.stringify({ truncado: true, tamanhoOriginal: json.length, raw: json.slice(0, limite) });
+}
+
 function montarPayload({
   placa,
   cpf,
@@ -252,7 +268,7 @@ async function pollVersoes(versaoId, mcToken, log) {
           url_pdf: rp.pathPdf || null,
           calculo_id: c.id || null,
           nro_calculo: rp.nroCalculo || null,
-          detalhes: JSON.stringify(c).substring(0, 3000),
+          detalhes: detalhesSeguro(c),
         };
       });
     }
@@ -277,4 +293,5 @@ module.exports = {
   montarPayload,
   dispararCotacao,
   pollVersoes,
+  detalhesSeguro,
 };
