@@ -5,6 +5,7 @@ const { internalAuth } = require('../utils/auth');
 const { getSession, invalidateSession } = require('../services/session');
 const { getCalculos } = require('../config/seguradoras');
 const { createLogger } = require('../utils/logger');
+const workerRegistry = require('../services/workerRegistry');
 
 const router = Router();
 const log = createLogger({ scope: 'quote' });
@@ -53,6 +54,11 @@ router.post('/quote/auto', internalAuth, async (req, res) => {
     },
   });
 
+  // Registra o worker como ativo para o graceful shutdown saber quantas cotacoes
+  // ainda estao em andamento. Removido no 'exit' (que sempre dispara, inclusive
+  // apos 'error').
+  workerRegistry.registrar(worker);
+
   worker.on('message', result => {
     if (result && result.invalidateSession) invalidateSession();
     log.info(`Worker concluido | OS=${body.os_id} | Placa=${placa}`);
@@ -61,6 +67,7 @@ router.post('/quote/auto', internalAuth, async (req, res) => {
     log.error(`Erro no worker | OS=${body.os_id} | Placa=${placa} | ${err.message}`);
   });
   worker.on('exit', code => {
+    workerRegistry.remover(worker);
     if (code !== 0) log.error(`Worker encerrou com codigo ${code} | OS=${body.os_id} | Placa=${placa}`);
   });
 

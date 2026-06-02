@@ -635,6 +635,23 @@ Nunca commitar `.env`. O `.env.example` lista as variáveis sem valores.
 6. **Nunca usar RLS em `profiles` que faz SELECT em `profiles`** — recursão infinita no Supabase
 7. **Yahoo/sites com TLS fingerprinting** — não se aplica neste projeto, mas registrado como referência
 
+## Limitações conhecidas
+
+1. **Graceful shutdown marca _todas_ as OS em `cotando` como erro.** No
+   encerramento (SIGTERM/SIGINT), após aguardar os workers (timeout de 30s), o
+   backend marca como `erro` toda OS ainda em `cotando` — e o startup faz o
+   mesmo com as órfãs (`cotando` há mais de 5min). No **piloto com instância
+   única** no Railway isso é **correto**: como só existe um container, qualquer
+   OS em `cotando` durante o shutdown é necessariamente dele.
+
+   ⚠️ **Se escalar horizontalmente** (múltiplas réplicas do backend), esse reset
+   passa a ser perigoso: um container ao reiniciar marcaria como erro também as
+   OS que **outra réplica** está processando ativamente. Antes de rodar mais de
+   uma instância, é preciso **escopar o reset por `instance_id`** (ou similar):
+   cada worker grava o id do seu container na OS, e o shutdown/startup só mexe
+   nas OS da própria instância. Ver `gracefulShutdown` e `resetCotandoAntigas`
+   em `src/index.js`.
+
 ## O que NÃO está no escopo do piloto
 
 - WhatsApp / Twilio / Meta Cloud API
