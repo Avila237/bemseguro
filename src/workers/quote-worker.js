@@ -1,3 +1,7 @@
+// Sentry tem que ser o PRIMEIRO require do worker — Worker Threads tem registro
+// de modulos proprio e inicializam o Sentry de forma independente da main thread.
+require('../instrument');
+
 const { parentPort, workerData } = require('worker_threads');
 const { createLogger } = require('../utils/logger');
 const { resolverFipe } = require('../services/fipe');
