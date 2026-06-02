@@ -3,7 +3,7 @@ import Page from '../components/Page.jsx';
 import { Card, Modal, Empty, Skeleton, Toast } from '../components/Ui.jsx';
 import { Icon } from '../components/Icons.jsx';
 import { timeAgo } from '../lib/format.js';
-import { listarApiKeys, criarApiKey, revogarApiKey, truncarChave } from '../lib/apiKeys.js';
+import { listarApiKeys, criarApiKey, revogarApiKey } from '../lib/apiKeys.js';
 
 const RATE_OPCOES = [60, 120, 300, 600];
 
@@ -136,7 +136,7 @@ export default function ApiKeys() {
               {list.map(k => (
                 <tr key={k.id} style={{ cursor: 'default', opacity: k.ativa ? 1 : 0.6 }}>
                   <td className="fw600">{k.nome}</td>
-                  <td><span className="tag" style={{ fontFamily: 'var(--font-mono)' }}>{truncarChave(k.key_hash)}</span></td>
+                  <td><span className="tag" style={{ fontFamily: 'var(--font-mono)' }}>{k.key_prefix ? `${k.key_prefix}…` : '—'}</span></td>
                   <td className="fz13 muted">{fmtData(k.created_at)}</td>
                   <td className="fz13 muted">{k.last_used_at ? timeAgo(k.last_used_at) : <span className="muted">nunca</span>}</td>
                   <td className="mono fz13">{k.rate_limit}/min</td>

@@ -23,8 +23,8 @@ vi.mock('../../lib/apiKeys.js', async (orig) => {
 import ApiKeys from '../ApiKeys.jsx';
 
 const KEYS = [
-  { id: 'k1', nome: 'CRM Produção', key_hash: 'bsh_live_a93f1122334455667788990011', ativa: true, rate_limit: 600, created_at: '2026-03-12T10:00:00Z', last_used_at: new Date(Date.now() - 2 * 60000).toISOString() },
-  { id: 'k3', nome: 'Webhook legado', key_hash: 'bsh_live_0d12aabbccddeeff0011223344', ativa: false, rate_limit: 300, created_at: '2026-01-02T10:00:00Z', last_used_at: null },
+  { id: 'k1', nome: 'CRM Produção', key_prefix: 'bsh_live_a93f', ativa: true, rate_limit: 600, created_at: '2026-03-12T10:00:00Z', last_used_at: new Date(Date.now() - 2 * 60000).toISOString() },
+  { id: 'k3', nome: 'Webhook legado', key_prefix: 'bsh_live_0d12', ativa: false, rate_limit: 300, created_at: '2026-01-02T10:00:00Z', last_used_at: null },
 ];
 
 function renderPage() {
@@ -50,10 +50,11 @@ describe('ApiKeys', () => {
     expect(container.querySelector('.skeleton')).toBeTruthy();
   });
 
-  test('renderiza a tabela com chave truncada, rate e status', async () => {
+  test('renderiza a tabela com o prefixo da chave, rate e status', async () => {
     renderPage();
     expect(await screen.findByText('CRM Produção')).toBeInTheDocument();
-    expect(screen.getByText('bsh_live_a93f…0011')).toBeInTheDocument();
+    // exibe apenas o prefixo visível (nunca o hash) seguido de reticências
+    expect(screen.getByText('bsh_live_a93f…')).toBeInTheDocument();
     expect(screen.getByText('600/min')).toBeInTheDocument();
     expect(screen.getByText('Ativa')).toBeInTheDocument();
     expect(screen.getByText('Revogada')).toBeInTheDocument();
