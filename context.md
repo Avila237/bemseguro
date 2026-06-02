@@ -319,10 +319,15 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
     CPF/CNPJ, telefone e CEP; validação client-side com destaque vermelho; botão
     "Criar OS" com loading; toast de sucesso; "Descartar" e "Voltar".
   - `Seguradoras.jsx` — Tela 06. Banner de segurança (credenciais nunca no
-    painel), header "X de Y ativas", e um card por seguradora (sigla colorida,
-    nome + slug, "Configurada", métricas placeholder, toggle Ativo/Inativo que
-    faz UPDATE em `seguradoras.ativa`, engrenagem placeholder). Inativa = card com
-    opacidade reduzida. Skeleton no load e estado vazio.
+    painel), header "X de Y ativas" + **dropdown de Janela (24h / 7 / 30 dias,
+    padrão 7)**, e um card por seguradora (sigla colorida, nome + slug,
+    "Configurada", **métricas reais** via `getMetricasTodas` — taxa de retorno com
+    cor por faixa ≥90 verde/≥85 azul/<85 âmbar + tooltip da aproximação, tempo
+    médio, último sucesso, erros 24h "global"; **loading** com skeleton ao trocar
+    a janela; **"Sem dados suficientes"** quando não há cotações no período),
+    toggle Ativo/Inativo que faz UPDATE em `seguradoras.ativa`, engrenagem
+    placeholder). Inativa = card com opacidade reduzida. Skeleton no load e estado
+    vazio.
   - `ApiKeys.jsx` — Tela 07. Tabela de chaves (nome, chave truncada, criada em,
     último uso, rate limit, status, Revogar) e modal de criação que gera a chave,
     salva e a exibe **uma única vez** com botão copiar. Skeleton e estado vazio.
@@ -476,6 +481,28 @@ Em `admin/src/lib/seguradoras.js`:
   na tabela = configurada), sem consultar credenciais.
 - **`setAtiva(id, ativa)`** — `seguradoras update({ ativa }).eq('id', id)` (toggle
   Ativo/Inativo, com update otimista + reversão em erro).
+- **`getMetricas(seguradora, janelaDias=7)`** / **`getMetricasTodas(seguradoras,
+  janelaDias=7)`** — métricas **reais** agregadas de `cotacoes` + `os_cotacao` no
+  período. `getMetricasTodas` faz **2 queries em batch** (OSs do período +
+  `cotacoes ... .in('seguradora', nomes)`) e devolve `{ [nome]: metricas }`;
+  `getMetricas` é a versão de 1 seguradora (2 queries, `.eq('seguradora')`). A
+  janela é filtrada no SQL (`gte created_at`) **e** em JS (testável). Retorno:
+  `{ taxaRetorno|null, tempoMedio|null, ultimoSucesso|null, erros24h, semDados,
+  amostra }`. Métricas por seguradora:
+  - **Taxa de retorno (%)** — `count(OSs cotado no período com premio>0 dessa
+    seguradora) / count(OSs cotado no período)`. **Aproximação:** como só há linha
+    em `cotacoes` quando a seguradora **retornou** (não existe registro de "não
+    respondeu"), assume-se que toda seguradora ativa participou de todas as OSs
+    concluídas no período. Varia com a amostra (UI mostra tooltip "Calculada com
+    base nas OSs cotadas no período. Pode variar conforme a amostra.").
+  - **Tempo médio (s)** — média de `cotacao.created_at − os.created_at` das
+    cotações da seguradora no período.
+  - **Último sucesso** — `max(cotacoes.created_at)` com `premio>0` no período.
+  - **Erros 24h** — contagem **global** de OSs `status='erro'` nas últimas 24h
+    (mesmo número p/ todas: não há erro por seguradora). UI rotula "(global)".
+  - **`semDados`** — `true` quando não há OSs concluídas no período ou a
+    seguradora não tem cotações nele (ex.: ativada recentemente) → UI mostra
+    "Sem dados suficientes no período".
 
 **RLS necessária** (a tabela `seguradoras` hoje só é acessível pelo
 `service_role`). Para o painel (usuário autenticado) ler e ligar/desligar sem
@@ -498,12 +525,16 @@ create policy "seguradoras_update_ativa_auth" on seguradoras
 > segura: expor o toggle por uma Edge Function `seguradora-toggle` (service_role)
 > em vez de UPDATE direto.
 
-**TODO — métricas placeholder:** taxa de retorno, tempo médio, último sucesso e
-erros 24h são **mock determinístico** (`metricasPlaceholder(nome)` em
-`lib/seguradoras.js`), pois ainda não há fonte real. Implementar agregação a
-partir de `cotacoes`/`audit_log` por seguradora (ex.: taxa = retornos/disparos,
-tempo médio do polling, contagem de erros nas últimas 24h). O "Testar conexões"
-e a engrenagem de config também são placeholders.
+As métricas por seguradora (taxa de retorno, tempo médio, último sucesso, erros
+24h) são **reais** — agregadas de `cotacoes`/`os_cotacao` via `getMetricasTodas`
+(ver acima). A janela é configurável no header (**24h / 7 dias / 30 dias**,
+padrão 7). Ainda são **placeholder**: o botão "Testar conexões" e a engrenagem de
+config de cada seguradora.
+
+**RLS adicional p/ as métricas:** `getMetricas*` lê `os_cotacao` e `cotacoes` —
+reusa as policies de SELECT `authenticated` já documentadas para essas tabelas
+(ver Monitoring / Ordens). Sem elas, as métricas retornam vazio (cai em
+"Sem dados suficientes").
 
 ### Queries Supabase + RLS (API Keys)
 

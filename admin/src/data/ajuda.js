@@ -210,7 +210,7 @@ export const SECOES = [
   /* ===================================================================== 06 */
   {
     id: 'seguradoras', num: '06', label: 'Seguradoras', icon: 'shield',
-    kw: 'seguradoras ligar desligar ativar taxa retorno tempo medio erros monitorar habilitar aliro allianz hdi mapfre sura tokio yelum zurich placeholder testar conexoes',
+    kw: 'seguradoras ligar desligar ativar taxa retorno tempo medio erros monitorar habilitar aliro allianz hdi mapfre sura tokio yelum zurich testar conexoes janela 24h 7 dias 30 dias ultimo sucesso amostra aproximacao sem dados',
     title: 'Seguradoras',
     lead: 'Quais seguradoras o Hub consulta, como ligá-las e desligá-las, e como ler a saúde de cada uma.',
     blocks: [
@@ -225,7 +225,7 @@ export const SECOES = [
       ] },
       { type: 'callout', variant: 'atencao', title: 'Desligue só com motivo', text: 'Desligue uma seguradora quando ela estiver **instável** (muitos erros) ou quando a corretora não trabalha com ela. Cada seguradora desligada é uma opção a menos de preço para o cliente.' },
       { type: 'shot', text: 'Lista de seguradoras com interruptores; uma delas aparece desligada.' },
-      { type: 'callout', variant: 'atencao', title: 'No piloto, os números desta tela são exemplos', text: 'A **taxa de retorno**, o **tempo médio** e os **erros** mostrados nos cartões de cada seguradora ainda são **valores de exemplo (placeholder)**, não métricas reais. Para os números reais por seguradora, use **Monitoring → “Taxa de sucesso por seguradora”**. Por enquanto, decida ligar/desligar com base no Monitoring e no contato com o suporte — não nesses cartões.' },
+      { type: 'callout', variant: 'info', title: 'Os números desta tela agora são reais', text: 'A **taxa de retorno**, o **tempo médio** e o **último sucesso** de cada seguradora são calculados a partir das cotações reais do período — não são mais valores de exemplo. Use o seletor **Janela** (no topo) para escolher o período: **Últimas 24h**, **7 dias** (padrão) ou **30 dias**.' },
       { type: 'h3', text: 'Interpretando a taxa de retorno' },
       { type: 'p', text: 'A **taxa de retorno** diz, de cada 100 cotações pedidas, quantas voltaram com preço. As cores no painel seguem estas faixas (não há vermelho):' },
       { type: 'table', head: ['Cor', 'Taxa de retorno', 'O que significa'], rows: [
@@ -233,9 +233,21 @@ export const SECOES = [
         ['{badge:cotando|Azul}', '**≥ 85% e < 90%**', 'Aceitável, mas abaixo do ideal — fique de olho.'],
         ['{badge:pendente|Âmbar}', '**< 85%**', 'Baixo. Considere desligar e avise o suporte.'],
       ] },
+      { type: 'callout', variant: 'atencao', title: 'A taxa de retorno é uma aproximação', text: 'O sistema só registra as cotações que **voltaram com preço** — não há registro de “a seguradora não respondeu”. Por isso a taxa é calculada sobre as **OSs concluídas no período**, assumindo que toda seguradora ligada participou de todas elas. Ela **varia conforme a amostra**: com poucas OSs no período, um único caso muda bastante o percentual, e uma seguradora **ativada há pouco** pode aparecer como **“Sem dados suficientes”**.' },
+      { type: 'h3', text: 'A janela de tempo (24h / 7 / 30 dias)' },
+      { type: 'p', text: 'O seletor **Janela**, no topo da tela, define o período de todas as métricas. **Últimas 24h** mostra o agora — bom para perceber se algo acabou de quebrar. **7 dias** (padrão) é o equilíbrio para o dia a dia. **30 dias** suaviza os picos e revela a tendência. Trocar a janela recarrega os números na hora.' },
+      { type: 'h3', text: 'Tempo médio e último sucesso' },
+      { type: 'p', text: '**Tempo médio** é quanto a seguradora demora, em segundos, entre o pedido e o retorno do preço no período (some o tempo de espera do polling). **Último sucesso** é quando ela devolveu preço pela última vez; **“Sem sucesso no período”** significa que, na janela escolhida, ela não retornou nenhuma cotação.' },
+      { type: 'callout', variant: 'info', title: 'Os erros são globais, não por seguradora', text: 'O número **“erros em 24h (global)”** é o total de OSs que falharam nas últimas 24 horas — o **mesmo para todas as seguradoras**. O sistema não registra o erro por seguradora (uma OS que falha não gera uma linha por seguradora), então esse número indica a saúde **geral** da operação, não de uma seguradora específica. Para investigar caso a caso, use **Monitoring → “Erros recentes”**.' },
+      { type: 'h3', text: 'Quando ficar atento' },
+      { type: 'ul', items: [
+        '**Taxa caindo** ao longo dos dias — compare a mesma seguradora em **7 dias** e **30 dias**; se a de 7 está bem menor, ela pode estar ficando instável.',
+        '**Tempo médio subindo** muito acima das outras — ela está lenta e segurando suas cotações.',
+        '**Sem sucesso recente** numa seguradora ligada e movimentada — pode ter caído; confirme nos **erros recentes** do Monitoring e avise o suporte.',
+      ] },
       { type: 'h3', text: 'O que fazer se uma seguradora cair' },
       { type: 'steps', items: [
-        'Confirme em **Monitoring → “Taxa de sucesso por seguradora”** que a taxa dela caiu (lembre que os cartões desta tela ainda são exemplo).',
+        'Confirme a queda da taxa nos **cartões desta tela** (ajuste a Janela) ou em **Monitoring → “Taxa de sucesso por seguradora”**.',
         '**Desligue** a seguradora para ela não atrapalhar as próximas cotações.',
         'Avise o **suporte** informando o nome da seguradora e desde quando caiu.',
         'Quando o suporte confirmar que normalizou, **ligue de novo**.',
@@ -377,7 +389,7 @@ export const SECOES = [
         { q: 'A placa não foi encontrada no lookup. E agora?', a: 'Acontece com carros muito novos. Preencha **marca, modelo, ano e código FIPE** manualmente. O código FIPE é o mais importante — sem ele certo, o preço sai errado.' },
         { q: 'Cancelei uma OS por engano. Como recupero?', a: 'Não dá para reabrir uma OS cancelada. É só criar uma **Nova Cotação** com os mesmos dados — o lookup de placa torna isso rápido.' },
         { q: 'Cliquei duas vezes em “Criar OS”. Criou duas?', a: 'Não. O painel manda uma **Idempotency-Key** única por formulário, então cliques repetidos viram **uma só OS**. Pode ficar tranquilo.' },
-        { q: 'Os cartões de Seguradoras mostram números estranhos ou sempre os mesmos. É bug?', a: 'No piloto, **não** é bug: a taxa de retorno, o tempo médio e os erros nos **cartões da tela Seguradoras** ainda são **valores de exemplo (placeholder)**. Os números reais por seguradora estão em **Monitoring → “Taxa de sucesso por seguradora”**.' },
+        { q: 'A taxa de retorno de uma seguradora mudou de um dia para o outro. É bug?', a: 'Provavelmente **não**. A taxa é uma **aproximação** calculada sobre as OSs cotadas no período selecionado na **Janela** (24h / 7 / 30 dias), então **varia conforme a amostra** — com poucas OSs, um único caso muda bastante o percentual. Compare janelas maiores (30 dias) para ver a tendência. Veja **Seguradoras → “Quando ficar atento”**.' },
         { q: 'O sistema travou bem na hora de atender o cliente.', a: 'Respire. Atualize a página ({kbd:F5}) e tente de novo. Se não voltar, abra o Hub em outro computador e siga o **Runbook de Incidentes**. Para o cliente, anote os dados em papel e crie a cotação assim que o sistema voltar.' },
       ] },
       { type: 'callout', variant: 'dica', title: 'Não achou sua dúvida?', text: 'Use a **busca** no topo do índice à esquerda, ou fale com o suporte (ver Runbook → “Como contatar o suporte”). Se for algo recorrente, avise — a gente adiciona aqui.' },
