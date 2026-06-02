@@ -456,9 +456,27 @@ Em `admin/src/lib/ordens.js`:
   `os_id in (ids)` → melhor preço (menor prêmio) por OS.
 - `contarStatus(filtros)` — `os_cotacao select('status')` sob os mesmos filtros
   (exceto o status) → contadores das tabs.
-- `cancelarOS(id)` — `os_cotacao update status='cancelada'`.
+- `cancelarOS(id)` — `os_cotacao update status='cancelada'` **+ `.select('id')`**
+  para confirmar que a linha foi alterada. Se vier **0 linhas sem erro** (caso
+  típico de RLS sem policy de UPDATE), **lança** — antes o botão "Cancelar" não
+  fazia nada silenciosamente (update bloqueado, sem erro no console). Usado pelo
+  detalhe (com estado `cancelando` no botão) e pelo menu de cada linha da lista.
 - `lib/osStats.js` `contarOSAtivas()` — `count` de `os_cotacao` com
   `status in ('pendente','cotando')` (badge da Sidebar).
+
+**RLS necessária para cancelar (UPDATE em `os_cotacao`):** as leituras já
+funcionam, mas **cancelar exige uma policy de UPDATE** para o usuário autenticado
+do painel — caso contrário o update é descartado em silêncio (0 linhas, sem
+erro). Criar no Supabase (mudança manual, fora do alcance do Claude Code):
+
+```sql
+create policy "os_cotacao_update_auth" on os_cotacao
+  for update to authenticated using (true) with check (true);
+```
+
+> Idealmente restringir ao necessário (ex.: só permitir transição para
+> `cancelada`) ou expor o cancelamento por uma Edge Function `os-cancel`
+> (service_role) em vez de UPDATE direto do client.
 
 ### Queries Supabase (Detalhe da OS)
 

@@ -159,6 +159,7 @@ export default function DetalheOS() {
   const [erro, setErro] = useState(null);
   const [naoEncontrada, setNaoEncontrada] = useState(false);
   const [recotando, setRecotando] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
 
   const fetchOS = useCallback(async ({ inicial = false } = {}) => {
     if (inicial) setCarregando(true);
@@ -204,13 +205,16 @@ export default function DetalheOS() {
   }
 
   async function handleCancelar() {
-    if (!os) return;
+    if (!os || cancelando) return;
     if (!window.confirm(`Cancelar a ${numeroOS(os.id)}? O status muda para "cancelada".`)) return;
+    setCancelando(true);
     try {
       await cancelarOS(os.id);
-      fetchOS();
+      await fetchOS();
     } catch (e) {
       alert('Não foi possível cancelar: ' + e.message);
+    } finally {
+      setCancelando(false);
     }
   }
 
@@ -295,8 +299,8 @@ export default function DetalheOS() {
             </span>
           )}
         </div>
-        <button className="btn btn-danger btn-sm" onClick={handleCancelar} disabled={status === 'cancelada'}>
-          <Icon.x /> Cancelar OS
+        <button className="btn btn-danger btn-sm" onClick={handleCancelar} disabled={cancelando || status === 'cancelada'}>
+          {cancelando ? <Icon.refresh className="spin" /> : <Icon.x />} {cancelando ? 'Cancelando…' : 'Cancelar OS'}
         </button>
       </div>
 

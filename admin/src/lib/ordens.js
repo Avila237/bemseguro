@@ -82,7 +82,20 @@ export async function contarStatus(params = {}) {
 }
 
 // Cancela uma OS (status → cancelada).
+//
+// Usa `.select()` para CONFIRMAR que uma linha foi de fato alterada. Sem policy
+// de UPDATE em `os_cotacao` (RLS), o Supabase atualiza 0 linhas e **não** retorna
+// erro — o que fazia o botão "Cancelar" não fazer nada silenciosamente (sem erro
+// no console). Tratamos 0 linhas como falha para a tela dar feedback. Ver a
+// policy necessária em context.md (Queries Supabase + RLS — Lista de OS).
 export async function cancelarOS(id) {
-  const { error } = await supabase.from('os_cotacao').update({ status: 'cancelada' }).eq('id', id);
+  const { data, error } = await supabase
+    .from('os_cotacao')
+    .update({ status: 'cancelada' })
+    .eq('id', id)
+    .select('id');
   if (error) throw new Error(error.message || 'Falha ao cancelar a OS');
+  if (!data || data.length === 0) {
+    throw new Error('Nenhuma alteração foi salva — você pode não ter permissão para cancelar esta OS. Avise o suporte.');
+  }
 }
