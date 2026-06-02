@@ -2,6 +2,22 @@ const { parentPort, workerData } = require('worker_threads');
 const { createLogger } = require('../utils/logger');
 const { resolverFipe } = require('../services/fipe');
 const { montarPayload, dispararCotacao, pollVersoes } = require('../services/aggilizador');
+const { retryComBackoff, isRetryable } = require('../utils/retry');
+
+// Marca a OS como erro direto no banco (service_role). Usado quando o save-cotacoes
+// falha em definitivo — nao depende do endpoint que justamente esta falhando.
+async function marcarOSComoErro(osId, mensagem, log) {
+  try {
+    const { getSupabase } = require('../services/supabase');
+    await getSupabase()
+      .from('os_cotacao')
+      .update({ status: 'erro', error_message: mensagem })
+      .eq('id', osId);
+    log.info(`OS marcada como erro: ${mensagem}`);
+  } catch (e) {
+    log.error(`nao foi possivel marcar OS como erro: ${e.message}`);
+  }
+}
 
 const { body, session, calculos, saveCotacoesUrl, railwayToken } = workerData;
 
@@ -111,26 +127,43 @@ const { body, session, calculos, saveCotacoesUrl, railwayToken } = workerData;
     resultados.forEach(r => log.info(`${r.seguradora}: R$ ${r.premio} | pdf: ${r.url_pdf || 'null'}`));
 
     if (os_id && saveCotacoesUrl) {
+      const saveBody = { os_id, resultados };
+      // Confirma o tamanho real do corpo enviado a save-cotacoes (debug do erro
+      // "Unterminated string in JSON at position 3000"). O fetch calcula o
+      // Content-Length a partir deste mesmo JSON.stringify, sem corte.
+      console.log('[worker] save-cotacoes body length:', JSON.stringify(saveBody).length);
       try {
-        const saveBody = { os_id, resultados };
-        // Confirma o tamanho real do corpo enviado a save-cotacoes (debug do erro
-        // "Unterminated string in JSON at position 3000"). O fetch calcula o
-        // Content-Length a partir deste mesmo JSON.stringify, sem corte.
-        console.log('[worker] save-cotacoes body length:', JSON.stringify(saveBody).length);
-        const saveRes = await fetch(saveCotacoesUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            // Gateway do Supabase exige Bearer com a anon key em toda Edge Function
-            'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
-            'x-secret-token': railwayToken,
+        // Retry ate 3x em falhas 5xx (transitorias) ou de rede. 4xx nao retenta.
+        const saveData = await retryComBackoff(
+          async () => {
+            const saveRes = await fetch(saveCotacoesUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                // Gateway do Supabase exige Bearer com a anon key em toda Edge Function
+                'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
+                'x-secret-token': railwayToken,
+              },
+              body: JSON.stringify(saveBody),
+            });
+            if (!saveRes.ok) {
+              throw Object.assign(new Error(`save-cotacoes HTTP ${saveRes.status}`), { status: saveRes.status });
+            }
+            return saveRes.json();
           },
-          body: JSON.stringify(saveBody),
-        });
-        const saveData = await saveRes.json();
-        log.info(`save-cotacoes: status=${saveRes.status} inseridos=${saveData.inseridos}`);
+          {
+            maxTentativas: 3,
+            // Qualquer 5xx vale retry no save (alem dos casos padrao de isRetryable).
+            deveRetentar: e => isRetryable(e) || (typeof e.status === 'number' && e.status >= 500),
+          }
+        );
+        log.info(`save-cotacoes: ok inseridos=${saveData.inseridos}`);
       } catch (e) {
-        log.error(`save-cotacoes erro: ${e.message}`);
+        // Falhou em definitivo (esgotou os retries ou erro permanente): a OS nao
+        // pode ficar presa em "cotando". Marca como erro com mensagem clara.
+        const msg = `Falha ao salvar cotacoes apos retries: ${e.message}`;
+        log.error(msg);
+        await marcarOSComoErro(os_id, msg, log);
       }
     }
 

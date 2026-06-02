@@ -1,4 +1,5 @@
 const { CORRETORA_ID } = require('../config/seguradoras');
+const { retryComBackoff } = require('../utils/retry');
 
 const AGGER_API = 'https://api-prod.aggilizador.com.br';
 const MULTICALCULO_API = 'https://api.multicalculo.net';
@@ -207,25 +208,33 @@ function montarPayload({
 }
 
 async function dispararCotacao(payload, aggerToken) {
-  const res = await fetch(`${AGGER_API}/calculo/calcularV2`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': aggerToken,
-    },
-    body: JSON.stringify(payload),
+  // Retry exponencial em falhas transitorias (502/503/504, timeout, rede). O 401
+  // (sessao expirada) e os demais 4xx NAO sao retentados — isRetryable os trata
+  // como permanentes — e propagam para o worker (que renova a sessao no 401).
+  return retryComBackoff(async () => {
+    const res = await fetch(`${AGGER_API}/calculo/calcularV2`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': aggerToken,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.status === 401) {
+      throw Object.assign(new Error('Token expirado'), { status: 401 });
+    }
+    if (!res.ok) {
+      throw Object.assign(new Error(`calcularV2 HTTP ${res.status}`), { status: res.status });
+    }
+
+    const data = await res.json();
+    const versaoId = Array.isArray(data)
+      ? (data[0] && data[0].idIntegracao)
+      : data.idIntegracao;
+
+    return { status: res.status, versaoId, data };
   });
-
-  if (res.status === 401) {
-    throw Object.assign(new Error('Token expirado'), { status: 401 });
-  }
-
-  const data = await res.json();
-  const versaoId = Array.isArray(data)
-    ? (data[0] && data[0].idIntegracao)
-    : data.idIntegracao;
-
-  return { status: res.status, versaoId, data };
 }
 
 async function pollVersoes(versaoId, mcToken, log) {
@@ -236,11 +245,24 @@ async function pollVersoes(versaoId, mcToken, log) {
   for (let i = 0; i < MAX_ROUNDS; i++) {
     await new Promise(r => setTimeout(r, INTERVAL_MS));
 
-    const res = await fetch(`${MULTICALCULO_API}/calculo/cotacao/versoes/${versaoId}`, {
-      headers: { 'Authorization': mcToken },
-    });
-
-    const versaoData = res.ok ? await res.json() : null;
+    // Retry exponencial dentro do round em falhas transitorias. Se esgotar as
+    // tentativas (ou for erro permanente), seguimos para o proximo round em vez
+    // de abortar todo o polling — o comportamento tolerante a falhas e mantido.
+    let versaoData = null;
+    try {
+      versaoData = await retryComBackoff(async () => {
+        const res = await fetch(`${MULTICALCULO_API}/calculo/cotacao/versoes/${versaoId}`, {
+          headers: { 'Authorization': mcToken },
+        });
+        if (!res.ok) {
+          throw Object.assign(new Error(`versoes HTTP ${res.status}`), { status: res.status });
+        }
+        return res.json();
+      });
+    } catch (e) {
+      log.warn(`polling ${i + 1} | falha ao consultar versoes: ${e.message}`);
+      versaoData = null;
+    }
     if (!versaoData) continue;
 
     const versaoObj = Array.isArray(versaoData) ? versaoData[0] : versaoData;
