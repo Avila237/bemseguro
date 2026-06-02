@@ -89,10 +89,6 @@ const { body, session, calculos, saveCotacoesUrl, railwayToken } = workerData;
 
     log.info(`Disparando cotacao em ${calculos.length} seguradoras...`);
 
-    // TODO temporario (debug): logar o payload completo enviado ao calcularV2.
-    // Remover apos a investigacao.
-    console.log('[worker] PAYLOAD:', JSON.stringify(payload, null, 2));
-
     let cotacaoResult;
     try {
       cotacaoResult = await dispararCotacao(payload, aggerToken);
