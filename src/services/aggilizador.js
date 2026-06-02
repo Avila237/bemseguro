@@ -1,6 +1,8 @@
 const { CORRETORA_ID } = require('../config/seguradoras');
 const { retryComBackoff } = require('../utils/retry');
-const Sentry = require('@sentry/node');
+// Importa do ./instrument (e nao direto de @sentry/node) para garantir que o
+// Sentry.init() ja rodou — e o mesmo instance global inicializado no boot.
+const Sentry = require('../instrument');
 
 const AGGER_API = 'https://api-prod.aggilizador.com.br';
 const MULTICALCULO_API = 'https://api.multicalculo.net';
@@ -242,6 +244,9 @@ async function dispararCotacao(payload, aggerToken) {
     // exceto o 401, que e fluxo esperado (renovacao de sessao tratada pelo worker)
     // e so geraria ruido.
     if (err.status !== 401) {
+      // TODO temporario (debug): confirmar que a captura esta sendo acionada.
+      // Remover apos a investigacao.
+      console.log('[sentry-debug] capturando exception:', err.message);
       Sentry.captureException(err, {
         tags: { component: 'aggilizador', operation: 'calcularV2' },
       });
