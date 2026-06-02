@@ -244,12 +244,11 @@ async function dispararCotacao(payload, aggerToken) {
     // exceto o 401, que e fluxo esperado (renovacao de sessao tratada pelo worker)
     // e so geraria ruido.
     if (err.status !== 401) {
-      // TODO temporario (debug): confirmar que a captura esta sendo acionada.
-      // Remover apos a investigacao.
-      console.log('[sentry-debug] capturando exception:', err.message);
       Sentry.captureException(err, {
         tags: { component: 'aggilizador', operation: 'calcularV2' },
       });
+      // O worker pode terminar logo apos o throw; forca o envio do evento antes.
+      await Sentry.flush(2000); // aguarda ate 2s pro Sentry enviar o evento
     }
     throw err;
   }

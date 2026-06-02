@@ -70,6 +70,8 @@ router.post('/quote/auto', internalAuth, async (req, res) => {
       tags: { component: 'quote-worker' },
       extra: { os_id: body.os_id, placa },
     });
+    // Listener nao e async: fire-and-forget, mas da tempo de o evento ser enviado.
+    Sentry.flush(2000).catch(() => {});
   });
   worker.on('exit', code => {
     workerRegistry.remover(worker);
@@ -79,6 +81,7 @@ router.post('/quote/auto', internalAuth, async (req, res) => {
         tags: { component: 'quote-worker' },
         extra: { os_id: body.os_id, placa, exitCode: code },
       });
+      Sentry.flush(2000).catch(() => {});
     }
   });
 
