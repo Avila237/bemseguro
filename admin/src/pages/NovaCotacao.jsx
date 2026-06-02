@@ -4,7 +4,7 @@ import Page from '../components/Page.jsx';
 import { Card, Toast } from '../components/Ui.jsx';
 import { Icon } from '../components/Icons.jsx';
 import { formatCpfCnpj, formatTelefone, formatCep } from '../lib/format.js';
-import { lookupPlaca, montarPayloadV2, criarCotacao } from '../lib/cotacao.js';
+import { lookupPlaca, montarPayloadV2, criarCotacao, gerarIdempotencyKey } from '../lib/cotacao.js';
 
 const COBERTURAS = [
   { label: 'Danos materiais', valor: 'R$ 200.000' },
@@ -80,6 +80,10 @@ export default function NovaCotacao() {
   const [apOpen, setApOpen] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [toast, setToast] = useState(null);
+  // Chave de idempotência gerada UMA vez por sessão de formulário (inicializador
+  // do useState). Estável entre re-renders e cliques → cliques duplos no "Criar
+  // OS" reusam a mesma chave e não criam OS duplicada.
+  const [idempotencyKey] = useState(gerarIdempotencyKey);
 
   const set = (campo, valor) => setForm(f => ({ ...f, [campo]: valor }));
 
@@ -129,7 +133,7 @@ export default function NovaCotacao() {
     setEnviando(true);
     try {
       const payload = montarPayloadV2(form);
-      const { id } = await criarCotacao(payload);
+      const { id } = await criarCotacao(payload, idempotencyKey);
       setToast('OS criada · cotação disparada');
       setTimeout(() => navigate(id ? `/ordens/${id}` : '/ordens'), 700);
     } catch (err) {

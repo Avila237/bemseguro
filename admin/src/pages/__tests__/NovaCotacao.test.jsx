@@ -16,7 +16,7 @@ vi.mock('../../lib/cotacao.js', async (orig) => {
 });
 
 import NovaCotacao from '../NovaCotacao.jsx';
-import { montarPayloadV2 } from '../../lib/cotacao.js';
+import { montarPayloadV2, gerarIdempotencyKey } from '../../lib/cotacao.js';
 
 function renderPage() {
   return render(
@@ -111,6 +111,33 @@ describe('NovaCotacao', () => {
     expect(await screen.findByText('Detalhe da OS')).toBeInTheDocument();
   });
 
+  test('envia uma Idempotency-Key (painel-<uuid>) ao criar a OS', async () => {
+    renderPage();
+    await preencherObrigatorios();
+    await userEvent.click(screen.getByRole('button', { name: /criar os/i }));
+
+    await waitFor(() => expect(criarCotacao).toHaveBeenCalledTimes(1));
+    const idempotencyKey = criarCotacao.mock.calls[0][1];
+    expect(idempotencyKey).toMatch(/^painel-[0-9a-f-]{36}$/i);
+  });
+
+  test('cada sessão de formulário usa uma Idempotency-Key distinta', async () => {
+    const { unmount } = renderPage();
+    await preencherObrigatorios();
+    await userEvent.click(screen.getByRole('button', { name: /criar os/i }));
+    await waitFor(() => expect(criarCotacao).toHaveBeenCalledTimes(1));
+    const key1 = criarCotacao.mock.calls[0][1];
+    unmount();
+
+    renderPage();
+    await preencherObrigatorios();
+    await userEvent.click(screen.getByRole('button', { name: /criar os/i }));
+    await waitFor(() => expect(criarCotacao).toHaveBeenCalledTimes(2));
+    const key2 = criarCotacao.mock.calls[1][1];
+
+    expect(key1).not.toBe(key2);
+  });
+
   test('Descartar confirma e volta para a lista', async () => {
     renderPage();
     // há dois botões "Descartar" (header e barra de ação) — usa o primeiro
@@ -135,5 +162,14 @@ describe('montarPayloadV2', () => {
     expect(p.veiculo).toMatchObject({ placa: 'JCU9D37', modelo: 'VW Saveiro', fipe: '005340-7', anoModelo: '2024', fabricante: '59' });
     expect(p.condutor).toMatchObject({ nome: 'Maria Souza', relacaoSegurado: 'segurado', sexo: 'F' });
     expect(p.apoliceAnterior).toMatchObject({ seguradora: 'Porto Seguro', classeBonus: 7, sinistro: true });
+  });
+});
+
+describe('gerarIdempotencyKey', () => {
+  test('gera chaves únicas com prefixo painel- e formato uuid v4', () => {
+    const a = gerarIdempotencyKey();
+    const b = gerarIdempotencyKey();
+    expect(a).toMatch(/^painel-[0-9a-f-]{36}$/i);
+    expect(a).not.toBe(b);
   });
 });

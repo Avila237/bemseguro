@@ -652,6 +652,20 @@ Nunca commitar `.env`. O `.env.example` lista as variáveis sem valores.
    nas OS da própria instância. Ver `gracefulShutdown` e `resetCotandoAntigas`
    em `src/index.js`.
 
+2. **Idempotência compara dados persistidos, não o payload bruto.** Na criação de
+   OS com `Idempotency-Key` (Edge Function `run-quote`), a checagem de "corpo
+   igual" no replay compara `placa`/`cpf` + `dados_risco` **da OS já persistida**
+   (via JSON canônico) — não o corpo cru da requisição. Para o fluxo do painel
+   isso cobre 100% dos casos.
+
+   ⚠️ **TODO** — se algum dia for necessário garantir comparação **byte-a-byte**
+   do payload original (ex.: integração com CRMs que enviam campos extras que não
+   são persistidos em `dados_risco`), adicionar uma coluna **`request_hash`**
+   (SHA-256 do body) em `os_cotacao` e comparar por ela em vez dos campos
+   persistidos. Ver a checagem de idempotência em
+   `edge-functions/run-quote-definitiva.ts` e a migração
+   `db/migrations/004-os-idempotency.sql`.
+
 ## O que NÃO está no escopo do piloto
 
 - WhatsApp / Twilio / Meta Cloud API

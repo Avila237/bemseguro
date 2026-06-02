@@ -76,9 +76,31 @@ export function montarPayloadV2(f) {
   };
 }
 
+// Gera uma Idempotency-Key estável para uma sessão de formulário do painel.
+// Formato: `painel-<uuid v4>`. Enviada no header Idempotency-Key ao run-quote —
+// cliques duplos / retries com a mesma chave não criam OS duplicada.
+export function gerarIdempotencyKey() {
+  const c = globalThis.crypto || crypto;
+  const uuid = c.randomUUID ? c.randomUUID() : uuidV4Fallback(c);
+  return 'painel-' + uuid;
+}
+
+function uuidV4Fallback(c) {
+  const b = new Uint8Array(16);
+  c.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40; // versão 4
+  b[8] = (b[8] & 0x3f) | 0x80; // variante
+  const h = Array.from(b, x => x.toString(16).padStart(2, '0'));
+  return `${h[0]}${h[1]}${h[2]}${h[3]}-${h[4]}${h[5]}-${h[6]}${h[7]}-${h[8]}${h[9]}-${h[10]}${h[11]}${h[12]}${h[13]}${h[14]}${h[15]}`;
+}
+
 // Cria a OS + dispara a cotação via Edge Function run-quote. Retorna o id criado.
-export async function criarCotacao(payload) {
-  const { data, error } = await supabase.functions.invoke('run-quote', { body: payload });
+// `idempotencyKey` (opcional) vai no header Idempotency-Key para tornar a criação
+// idempotente (ver gerarIdempotencyKey).
+export async function criarCotacao(payload, idempotencyKey) {
+  const opts = { body: payload };
+  if (idempotencyKey) opts.headers = { 'Idempotency-Key': idempotencyKey };
+  const { data, error } = await supabase.functions.invoke('run-quote', opts);
   if (error) throw new Error(error.message || 'Falha ao criar a OS');
   const id = data?.id || data?.os_id || (data?.os && data.os.id) || null;
   return { id, data };

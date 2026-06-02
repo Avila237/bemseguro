@@ -16,8 +16,10 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-api-key, x-secret-token, content-type, x-client-info, apikey",
+    "authorization, x-api-key, x-secret-token, content-type, x-client-info, apikey, idempotency-key",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  // Permite o browser ler o header de replay na resposta.
+  "Access-Control-Expose-Headers": "Idempotent-Replayed",
 };
 
 function json(body: unknown, status = 200): Response {
@@ -36,6 +38,23 @@ async function validarApiKey(admin: any, chave: string) {
   }
   const row = Array.isArray(data) ? data[0] : data;
   return row?.id ? row : null;
+}
+
+// Serializacao canonica (chaves ordenadas recursivamente) para comparar payloads
+// de forma estavel: o JSONB nao preserva a ordem das chaves ao reler, entao um
+// JSON.stringify direto poderia divergir mesmo com conteudo identico.
+function canonicalJSON(v: any): string {
+  const norm = (x: any): any => {
+    if (Array.isArray(x)) return x.map(norm);
+    if (x && typeof x === "object") {
+      return Object.keys(x).sort().reduce((acc: any, k) => {
+        acc[k] = norm(x[k]);
+        return acc;
+      }, {});
+    }
+    return x;
+  };
+  return JSON.stringify(norm(v));
 }
 
 serve(async (req: Request) => {
@@ -71,6 +90,11 @@ serve(async (req: Request) => {
 
     // ── Parsear body ──
     const body = await req.json();
+
+    // Idempotency-Key (opcional — padrão Stripe/AWS): so se aplica a CRIACAO de OS
+    // (o recotar abaixo, com body.os_id, ignora). Evita OS duplicada em retries /
+    // clique duplo no painel.
+    const idempotencyKey = req.headers.get("idempotency-key") || "";
 
     // ── RECOTAR: body com os_id reutiliza OS existente ──
     if (body.os_id) {
@@ -159,6 +183,53 @@ serve(async (req: Request) => {
       dadosRisco = body.dados_risco || {};
     }
 
+    // ── IDEMPOTÊNCIA (opcional, padrão Stripe/AWS) ──
+    // Com Idempotency-Key, verifica se ja existe OS com a mesma chave nas ultimas
+    // 24h: mesmo corpo => replay (200 + Idempotent-Replayed); corpo diferente => 409.
+    if (idempotencyKey) {
+      const desde24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: existente } = await supabase
+        .from("os_cotacao")
+        .select("id, status, placa, cpf, dados_risco")
+        .eq("idempotency_key", idempotencyKey)
+        .gte("created_at", desde24h)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existente) {
+        const mesmoCorpo =
+          existente.placa === placaLimpa &&
+          existente.cpf === cpfLimpo &&
+          canonicalJSON(existente.dados_risco) === canonicalJSON(dadosRisco);
+
+        if (mesmoCorpo) {
+          console.log(`[run-quote] Idempotency replay OS=${existente.id} | key=${idempotencyKey}`);
+          return new Response(
+            JSON.stringify({
+              os_id: existente.id,
+              status: existente.status,
+              message: "OS já criada com esta Idempotency-Key (replay)",
+            }),
+            {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json", "Idempotent-Replayed": "true" },
+            }
+          );
+        }
+
+        // Mesma chave, corpo diferente => conflito (uso indevido da chave).
+        return json(
+          {
+            error: "Idempotency-Key já utilizada nas últimas 24h com um corpo diferente",
+            idempotency_key: idempotencyKey,
+            os_id: existente.id,
+          },
+          409
+        );
+      }
+    }
+
     const { data: os, error: osError } = await supabase
       .from("os_cotacao")
       .insert({
@@ -170,11 +241,40 @@ serve(async (req: Request) => {
         cep: cep || null,
         dados_risco: dadosRisco,
         api_key_id: apiKeyId,
+        idempotency_key: idempotencyKey || null,
       })
       .select("id, status, placa, cpf, created_at")
       .single();
 
     if (osError) {
+      // Corrida: requisicao concorrente com a mesma Idempotency-Key inseriu antes
+      // (viola o indice unico parcial). Retorna a OS ja criada como replay.
+      if (
+        idempotencyKey &&
+        (osError.code === "23505" || /duplicate key|unique/i.test(osError.message || ""))
+      ) {
+        const { data: jaCriada } = await supabase
+          .from("os_cotacao")
+          .select("id, status")
+          .eq("idempotency_key", idempotencyKey)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (jaCriada) {
+          console.log(`[run-quote] Idempotency replay (corrida) OS=${jaCriada.id} | key=${idempotencyKey}`);
+          return new Response(
+            JSON.stringify({
+              os_id: jaCriada.id,
+              status: jaCriada.status,
+              message: "OS já criada com esta Idempotency-Key (replay)",
+            }),
+            {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json", "Idempotent-Replayed": "true" },
+            }
+          );
+        }
+      }
       console.error("[run-quote] Erro ao criar OS:", osError.message);
       return json({ error: "Erro ao criar OS", detail: osError.message }, 500);
     }
