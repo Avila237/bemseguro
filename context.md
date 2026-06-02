@@ -220,6 +220,16 @@ VITE_SUPABASE_ANON_KEY=
 > Edge Function `lookup-placa` (que detém o token do Railway no servidor), então
 > não existem `VITE_RAILWAY_*` no admin.
 
+> ⚠️ **Build time, não runtime.** O Vite **embeda** essas variáveis no bundle
+> durante `npm run build:admin` — elas precisam existir **no build do Docker**, não
+> só no runtime do container. Por isso o Dockerfile declara `ARG VITE_SUPABASE_URL`
+> / `ARG VITE_SUPABASE_ANON_KEY` (→ `ENV`) no stage `admin-build`, **antes** do
+> `RUN npm run build:admin`. Se faltarem no build, o bundle sai vazio e o painel
+> quebra em produção com **`supabaseUrl is required`**. No **Railway**, variáveis
+> com prefixo `VITE_` definidas no painel são passadas como **build args**
+> automaticamente quando há um `ARG` correspondente no Dockerfile (não basta
+> configurá-las só como env de runtime).
+
 ### Design system ("Clareza Operacional")
 
 Tokens e classes do design (de claude.ai/design) vivem em
@@ -700,6 +710,13 @@ paralelo (`Promise.all`) e agrega tudo em memória. **Fonte de dados por card:**
 - `Dockerfile` faz **multi-stage build**: o stage 1 instala as deps do admin e roda
   `npm run build:admin`; o stage 2 (runtime) copia apenas `admin/dist` para a imagem,
   sem carregar as devDependencies do front.
+- O stage 1 (`admin-build`) declara `ARG VITE_SUPABASE_URL` / `ARG
+  VITE_SUPABASE_ANON_KEY` e os promove a `ENV` **antes** do `RUN npm
+  run build:admin`, para o Vite embedá-los no bundle. **No Railway, essas
+  variáveis precisam estar configuradas como build args** (variáveis `VITE_` do
+  painel viram build args automaticamente por causa do `ARG` correspondente) —
+  só env de runtime não basta, senão o painel quebra com `supabaseUrl is
+  required`. Ver "Variáveis de ambiente (Vite)" acima.
 
 ## Variáveis de ambiente
 

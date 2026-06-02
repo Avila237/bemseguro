@@ -10,6 +10,16 @@ RUN cd admin && npm install
 
 # Copia o codigo do admin e gera o build estatico em admin/dist
 COPY admin/ ./admin/
+
+# Variaveis VITE_ precisam existir em BUILD TIME: o Vite as embeda no bundle.
+# No Railway, variaveis com prefixo VITE_ definidas no painel sao passadas como
+# build args automaticamente quando ha um ARG correspondente aqui. Sem isto, o
+# bundle sai sem a URL/key e o painel quebra com "supabaseUrl is required".
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+
 RUN npm run build:admin
 
 # ---- Stage 2: runtime (API Express) ----
