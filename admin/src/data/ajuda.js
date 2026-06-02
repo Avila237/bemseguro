@@ -60,7 +60,7 @@ export const SECOES = [
   /* ===================================================================== 02 */
   {
     id: 'acesso', num: '02', label: 'Acesso ao Painel', icon: 'lock',
-    kw: 'login entrar senha esqueci recuperar usuarios permissoes sair logout conta supabase manter conectado',
+    kw: 'login entrar senha esqueci recuperar usuarios permissoes sair logout conta supabase manter conectado meu perfil trocar senha historico atividade operador papel',
     title: 'Acesso ao Painel',
     lead: 'Como entrar no Hub, recuperar a senha e gerenciar quem da equipe tem acesso.',
     blocks: [
@@ -78,14 +78,20 @@ export const SECOES = [
       { type: 'h3', text: 'Gerenciamento de usuários' },
       { type: 'p', text: 'No piloto não há tela de cadastro dentro do Hub. Aqui, **“administrador” não é um papel do app** (o piloto usa um acesso único) — é simplesmente **a pessoa que tem acesso ao Supabase** e cria/edita as contas lá. Se você precisa de um novo acesso para um colega, peça a essa pessoa.' },
       { type: 'p', text: 'Cada pessoa deve ter o **seu próprio login**. Tudo que acontece no sistema fica registrado no **Audit Log** com o nome de quem fez — senhas compartilhadas tornam impossível saber quem fez o quê.' },
+      { type: 'h3', text: 'Meu perfil' },
+      { type: 'p', text: 'No menu do **avatar** (canto superior direito) há a opção **Meu perfil**, que abre a sua conta no Hub. A tela é dividida em três partes:' },
+      { type: 'ul', items: [
+        '**Dados da conta** — seu nome, e-mail, papel, último login e a data de criação da conta. São **somente leitura** no piloto; o **e-mail não é editável** (mudanças de cadastro são feitas pelo administrador no Supabase). O papel aparece como **“Operador”** (ainda não há perfis diferentes no piloto).',
+        '**Trocar senha** — informe a **senha atual**, a **nova senha** (mínimo de 8 caracteres) e a **confirmação**, e clique em **Salvar nova senha**. Você continua conectado nesta sessão e usa a nova senha no próximo login.',
+        '**Histórico de atividade** — as últimas ações feitas pelo painel (cotações e recotações). No piloto é o **histórico geral do painel**, ainda não separado por usuário.',
+      ] },
       { type: 'h3', text: 'Encerrar a sessão' },
       { type: 'p', text: 'Clique no **seu avatar** (canto superior direito, com suas iniciais) para abrir o menu e escolha **Sair**. O sistema encerra a sessão no Supabase e leva você de volta à tela de login. **Sempre saia** ao terminar de usar um computador compartilhado.' },
       { type: 'steps', items: [
         'Clique no avatar com suas iniciais, no topo à direita.',
-        'No menu que abre, clique em **Sair**.',
+        'No menu que abre, clique em **Sair** (ou em **Meu perfil** para ver sua conta).',
         'Aguarde o **“Saindo…”** — você é redirecionado para a tela de login.',
       ] },
-      { type: 'p', text: 'O mesmo menu tem a opção **Meu perfil**, ainda **em desenvolvimento**: por enquanto os dados do usuário só são editados pelo administrador no Supabase.' },
     ],
   },
 

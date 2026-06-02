@@ -249,10 +249,9 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
 - `Topbar` — título + subtítulo da página, **ações da própria tela** (`actions`),
   sino de alertas e avatar com o e-mail do usuário (de `supabase.auth.getUser`).
   O avatar é um botão que abre um **dropdown** (ancorado à direita, fecha com
-  clique fora ou `ESC`) com duas opções: **Meu perfil** (placeholder — mostra um
-  `alert` de "em desenvolvimento") e **Sair** (chama `supabase.auth.signOut()`,
-  mostra "Saindo…" e redireciona para `/admin/login` via `useNavigate`).
-  Migrado para tokens OKLCH.
+  clique fora ou `ESC`) com duas opções: **Meu perfil** (navega para
+  `/admin/perfil` via `useNavigate`) e **Sair** (chama `supabase.auth.signOut()`,
+  mostra "Saindo…" e redireciona para `/admin/login`). Migrado para tokens OKLCH.
 - `Page` — wrapper de tela: renderiza a `Topbar` (com `title/subtitle/actions`)
   + corpo rolável. Cada página usa `<Page>` para injetar suas ações no header.
 - `Layout` — shell: `Sidebar` + coluna de conteúdo (recebe o `Outlet`).
@@ -274,6 +273,9 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
 - `/admin/audit-log` — Audit Log (Tela 08). Componente `pages/AuditLog.jsx`.
 - `/admin/monitoring` — Monitoring (Tela 09). Componente `pages/Monitoring.jsx`.
 - `/admin/ajuda` — Ajuda & Documentação (Tela 11). Componente `pages/Ajuda.jsx`.
+- `/admin/perfil` — Meu Perfil / Conta do Operador (Tela 12). Componente
+  `pages/MeuPerfil.jsx`. Acessível pelo **dropdown do avatar** (não tem item na
+  Sidebar). Cada usuário vê só a própria conta (garantido pelo `ProtectedRoute`).
 - Demais rotas ficam dentro do `Layout`, protegidas por `ProtectedRoute`.
 - `/admin/` redireciona para `/admin/dashboard`.
 
@@ -364,7 +366,18 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
     **"Imprimir runbook"** na seção 08 (CSS de impressão esconde sidebar/topbar/
     índice). Conteúdo vem de `data/ajuda.js` (ver abaixo). **Sem dados do
     Supabase** — é conteúdo estático.
-  - Todas as telas do design (01–09 + 11/Ajuda) implementadas.
+  - `MeuPerfil.jsx` — Tela 12 (Meu Perfil / Conta do Operador). Banner de
+    identidade (avatar com iniciais, nome, papel, selo "Visível apenas para
+    você") + 3 blocos: **Dados da conta** (somente leitura — nome, e-mail "não
+    editável", papel, último login com tempo relativo, data de criação; lidos de
+    `supabase.auth.getUser()` → `email`, `user_metadata.full_name`, `created_at`,
+    `last_sign_in_at`), **Trocar senha** (senha atual/nova/confirmar com
+    validação client-side: atual obrigatória, nova ≥8 e ≠ atual, confirmação
+    bate; ao salvar faz `signInWithPassword` p/ checar a atual e depois
+    `updateUser({ password })`; medidor de força + estados verde/vermelho inline)
+    e **Histórico de atividade** (via `lib/perfil.js`, ver abaixo). Skeleton no
+    load. Acessível só pelo próprio usuário (não há "admin vê outro perfil").
+  - Todas as telas do design (01–09 + 11/Ajuda + 12/Meu Perfil) implementadas.
 
 - O badge ao lado de "Ordens de Serviço" na Sidebar mostra o total de OS com
   status `pendente`/`cotando` (via `lib/osStats.js`, atualizado a cada 60s).
@@ -391,6 +404,32 @@ renderiza — para editar/adicionar conteúdo, mexa **apenas no `data/ajuda.js`*
   bloco novo, adicione o `case` correspondente no `Block` de `Ajuda.jsx`.
 - A data de "Última atualização" exibida nos artigos vem de `LAST_UPDATED`.
 - A rota é `/admin/ajuda` (item "Ajuda & Docs" na Sidebar, via `lib/nav.js`).
+
+### Meu Perfil (Tela 12) — histórico de atividade
+
+Em `admin/src/lib/perfil.js`:
+
+- **`carregarHistorico(limit = 20)`** — `audit_log` `select(id,endpoint,method,
+  response_status,request_payload,created_at)` filtrando **`request_payload->>auth
+  = 'painel'`** (filtro JSONB via `.eq('request_payload->>auth','painel')`),
+  `order created_at desc` `limit 20`. Cada linha é normalizada por
+  **`descreverAtividade(r)`** → `{ ico, tone, text, sub }` (recotar → "Recotou a
+  OS-XXXXXX"; disparo com `placa` → "Disparou cotação para a placa …"; status
+  ≥400 → "Falha em …"; fallback genérico).
+- **Aproximação do histórico (Opção A):** o `audit_log` **não tem `user_id`**. As
+  ações do painel chegam com **JWT** (não API key), então `api_key_id` é nulo e
+  não identifica quem agiu. Usamos `request_payload->>auth = 'painel'`, que traz o
+  **histórico GERAL do painel** (todas as ações via Hub), não por usuário — a tela
+  deixa isso explícito ("Mostrando o histórico geral do painel").
+- **Papel/role** é fixo **"Operador"** (placeholder) — não há RBAC no piloto.
+
+**TODOs (Tela 12):**
+- **RBAC real:** hoje o piloto usa acesso único e o papel é sempre "Operador".
+  Introduzir papéis (ex.: Operador/Administrador) e refletir em `MeuPerfil` e nas
+  permissões quando houver RBAC.
+- **`user_id` no `audit_log`:** adicionar coluna `user_id` (preenchida com o id do
+  JWT na Edge Function) para o histórico ser **por usuário** (Opção B), em vez do
+  filtro global atual por `request_payload->>auth = 'painel'`.
 
 ### Queries Supabase (Dashboard)
 

@@ -70,16 +70,14 @@ describe('Topbar', () => {
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/login', { replace: true }));
   });
 
-  test('clicar em "Meu perfil" mostra o alerta de "em desenvolvimento" e fecha o menu', async () => {
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+  test('clicar em "Meu perfil" navega para /perfil e fecha o menu', async () => {
     render(<Topbar title="Dashboard" />);
     await userEvent.click(screen.getByRole('button', { name: /menu do usuário/i }));
     await userEvent.click(screen.getByRole('menuitem', { name: /meu perfil/i }));
 
-    expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('Em desenvolvimento'));
+    expect(mockNavigate).toHaveBeenCalledWith('/perfil');
     expect(screen.queryByRole('menu')).toBeNull();
     expect(mockSignOut).not.toHaveBeenCalled();
-    alertSpy.mockRestore();
   });
 
   test('tecla ESC fecha o dropdown', async () => {

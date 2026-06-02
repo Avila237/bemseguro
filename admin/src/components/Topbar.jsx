@@ -90,9 +90,7 @@ export default function Topbar({ title, subtitle, actions }) {
 
   function meuPerfil() {
     setAberto(false);
-    window.alert(
-      'Em desenvolvimento. Por enquanto, dados do usuário só podem ser editados pelo administrador via Supabase.'
-    );
+    navigate('/perfil');
   }
 
   async function sair() {
