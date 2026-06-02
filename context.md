@@ -56,6 +56,7 @@ Cliente (API REST ou Painel Admin)
 | Método | Endpoint                     | Auth       | Descrição                                    |
 |--------|------------------------------|------------|----------------------------------------------|
 | GET    | /health                      | Nenhuma    | Healthcheck                                  |
+| GET    | /session/status              | Nenhuma    | Estado da sessão Aggilizador (TTL p/ o painel) |
 | POST   | /api/v1/cotacoes             | API key    | Cria OS e dispara cotação (retorna 202)      |
 | GET    | /api/v1/cotacoes/:id         | API key    | Status e resultados da OS                    |
 | POST   | /api/v1/lookup/placa         | API key    | Consulta dados do veículo pela placa         |
@@ -157,6 +158,7 @@ bem-seguro-hub/
       health.js
       quote.js            # POST /api/v1/cotacoes, GET /api/v1/cotacoes/:id
       lookup.js           # POST /api/v1/lookup/placa
+      session.js          # GET /session/status (estado da sessão p/ o painel, CORS)
     services/
       aggilizador.js      # login, calcularV2, montagem de payload
       session.js          # Cache de token compartilhado (TTL 55min)
@@ -337,7 +339,8 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
   - `Monitoring.jsx` — Tela 09. Painel técnico de saúde da operação. Header com
     badge de saúde do **Railway** (`GET /health` direto do browser — público, sem
     auth) e botão "Atualizar". 4 cards de métricas (tempo médio de cotação, taxa
-    de sucesso global, sessão Aggilizador, erros 24h), gráfico "Cotações por dia"
+    de sucesso global, **sessão Aggilizador real** via `GET /session/status`,
+    erros 24h), gráfico "Cotações por dia"
     (30 dias, barras CSS proporcionais ao máximo), "Taxa de sucesso por
     seguradora" (barras horizontais) e lista "Erros recentes" (24h). **Queries
     reais** (sem mock), skeleton no load, **auto-refresh a cada 60s** e estado de
@@ -535,10 +538,6 @@ create policy "api_keys_update_auth" on api_keys
   (gerar a chave, exibir 1x, salvar só o hash; validação por hash no backend).
   Hoje, como é texto plano, um admin autenticado consegue ler a chave inteira via
   `key_hash` — aceitável só no piloto.
-- **Widget "Sessão Aggilizador"** (rodapé da Sidebar): hoje é **placeholder
-  estático** (badge "Ativa", timer 41:08, barra 74%). Falta um endpoint que
-  exponha o TTL real da sessão Aggilizador (a sessão vive na main thread do
-  backend, cache de 55min) — ligar o widget a esse dado quando existir.
 
 ### Queries Supabase + RLS (Audit Log)
 
@@ -582,7 +581,7 @@ paralelo (`Promise.all`) e agrega tudo em memória. **Fonte de dados por card:**
 |------------------------------------|-----------------------------------------------------------------------|
 | **Tempo médio de cotação (s)**     | `audit_log` `eq endpoint='/quote/auto'` `gte 14d` → média de `duration_ms` dos últimos 7 dias (em s). Delta "vs semana passada" = compara com os 7 dias anteriores (dias 7–14). |
 | **Taxa de sucesso global (%)**     | `os_cotacao` `gte 7d` → `count(status='cotado') / total`.             |
-| **Sessão Aggilizador**             | **Placeholder** (Ativa, "expira em 41:08 · cache 55min") — sem fonte real ainda (ver TODO do widget). |
+| **Sessão Aggilizador**             | **Real** via `GET /session/status` (Railway). Rótulo/cor por TTL (verde >10min, amarelo 1–10min, vermelho expirada); sub "expira em MM:SS · última renovação há X". "Indisponível" (cinza) se o Railway não responder — carregado com `.catch(()=>null)`, independente das métricas. |
 | **Erros (24h)**                    | `os_cotacao` `eq status='erro'` `gte 48h` → `count` na janela de 24h; delta = vs as 24h anteriores. |
 | **Cotações por dia (30 dias)**     | `cotacoes` `gte 30d` → agrupa `created_at` por dia (série de 30 posições; heights proporcionais ao máximo, últimos 5 dias em destaque laranja). |
 | **Taxa de sucesso por seguradora** | `cotacoes` `gte 30d` → por seguradora, `count(premio>0) / count(total)` (barras horizontais, ordenadas pela taxa). |
@@ -591,6 +590,13 @@ paralelo (`Promise.all`) e agrega tudo em memória. **Fonte de dados por card:**
 - **`checarRailway()`** — `fetch('https://bemseguro-production.up.railway.app/health')`
   (GET público, sem auth, direto do browser). `true` se 2xx; `false` em erro de
   rede/status → badge "Railway saudável" / "Railway indisponível" / "Verificando…".
+- **`getSessionStatus()`** (`lib/sessionStatus.js`) — `fetch('…/session/status')`
+  (GET público, sem auth). Devolve `{ ativa, expira_em, ttl_segundos,
+  ultima_renovacao }`. Helpers no mesmo módulo: `formatTTL(seg)` → "MM:SS",
+  `faixaSessao(estado)` → `{ nivel, cor, tint, badge, rotulo }` (verde >10min ·
+  amarelo 1–10min · vermelho expirada), `TTL_TOTAL_S` (55min, p/ a barra).
+  Usado pelo **widget da Sidebar** (`SessaoAggilizador`, auto-refresh 30s,
+  fallback "Status indisponível") e pelo **card de Monitoring**.
 - Ícone `wifi` adicionado a `components/Icons.jsx` (card de sessão).
 - **RLS:** reusa as policies de SELECT já documentadas para `os_cotacao`,
   `cotacoes`, `audit_log` (esta última ainda **pendente** — ver Audit Log acima).

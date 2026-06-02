@@ -14,6 +14,13 @@ vi.mock('../../lib/monitoring.js', () => ({
   checarRailway: (...a) => checarRailway(...a),
 }));
 
+// Mocka só o fetch de /session/status; mantém formatTTL/faixaSessao reais.
+const { mockSessionStatus } = vi.hoisted(() => ({ mockSessionStatus: vi.fn() }));
+vi.mock('../../lib/sessionStatus.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, getSessionStatus: (...a) => mockSessionStatus(...a) };
+});
+
 import Monitoring from '../Monitoring.jsx';
 
 const DADOS = {
@@ -46,6 +53,12 @@ describe('Monitoring', () => {
   beforeEach(() => {
     carregarMonitoring.mockReset().mockResolvedValue(DADOS);
     checarRailway.mockReset().mockResolvedValue(true);
+    mockSessionStatus.mockReset().mockResolvedValue({
+      ativa: true,
+      ttl_segundos: 1800, // 30:00, > 10min → "Ativa"
+      expira_em: new Date(Date.now() + 1800000).toISOString(),
+      ultima_renovacao: new Date(Date.now() - 300000).toISOString(),
+    });
   });
 
   test('mostra skeleton enquanto carrega', () => {
@@ -66,6 +79,23 @@ describe('Monitoring', () => {
     expect(screen.getByText('89')).toBeInTheDocument(); // taxa de sucesso (%)
     expect(screen.getByText('Ativa')).toBeInTheDocument(); // sessão Aggilizador
     expect(screen.getByText('8')).toBeInTheDocument(); // erros 24h
+  });
+
+  test('card Sessão Aggilizador mostra o estado real (timer + última renovação)', async () => {
+    renderPage();
+    expect(await screen.findByText('Ativa')).toBeInTheDocument();
+    // ttl 1800s → "expira em 30:00 · última renovação …" (texto combinado no card)
+    expect(screen.getByText(/expira em 30:00/i)).toBeInTheDocument();
+    expect(screen.getByText(/última renovação/i)).toBeInTheDocument();
+  });
+
+  test('card Sessão Aggilizador mostra "Indisponível" quando o Railway não responde', async () => {
+    mockSessionStatus.mockRejectedValue(new Error('rede'));
+    renderPage();
+    await screen.findByText('Tempo médio de cotação');
+    expect(screen.getByText('Indisponível')).toBeInTheDocument();
+    // métricas do Supabase continuam carregando normalmente
+    expect(screen.getByText('42')).toBeInTheDocument();
   });
 
   test('mostra badge "Railway saudável" quando o health check passa', async () => {

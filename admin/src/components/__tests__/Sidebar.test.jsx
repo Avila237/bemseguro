@@ -1,9 +1,17 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, test, expect, vi } from 'vitest';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 // Sidebar busca o contador de OS ativas para o badge — mockamos.
 vi.mock('../../lib/osStats.js', () => ({ contarOSAtivas: vi.fn().mockResolvedValue(4) }));
+
+// O widget de sessão chama GET /session/status — mockamos só o fetch, mantendo
+// os helpers reais (formatTTL/faixaSessao) via importOriginal.
+const { mockSessionStatus } = vi.hoisted(() => ({ mockSessionStatus: vi.fn() }));
+vi.mock('../../lib/sessionStatus.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, getSessionStatus: (...a) => mockSessionStatus(...a) };
+});
 
 import Sidebar from '../Sidebar.jsx';
 import { NAV_ITEMS } from '../../lib/nav.js';
@@ -17,6 +25,15 @@ function renderAt(path) {
 }
 
 describe('Sidebar', () => {
+  beforeEach(() => {
+    mockSessionStatus.mockReset().mockResolvedValue({
+      ativa: true,
+      ttl_segundos: 1800, // 30:00, > 10min → verde / "Ativa"
+      expira_em: new Date(Date.now() + 1800000).toISOString(),
+      ultima_renovacao: new Date(Date.now() - 300000).toISOString(),
+    });
+  });
+
   test('exibe o wordmark BemSeguro · Hub · Admin', () => {
     renderAt('/dashboard');
     // "Bem" e "Seguro" são spans separados (Seguro em laranja)
@@ -60,5 +77,18 @@ describe('Sidebar', () => {
     expect(badge).toBeInTheDocument();
     // o badge fica dentro do link de Ordens de Serviço
     expect(badge.closest('a')).toHaveTextContent('Ordens de Serviço');
+  });
+
+  test('widget da Sessão Aggilizador mostra dados reais (badge + timer)', async () => {
+    renderAt('/dashboard');
+    // ttl 1800s → "Ativa" (verde) e timer 30:00
+    expect(await screen.findByText('Ativa')).toBeInTheDocument();
+    expect(screen.getByText('30:00')).toBeInTheDocument();
+  });
+
+  test('widget mostra "Status indisponível" quando o Railway não responde', async () => {
+    mockSessionStatus.mockRejectedValue(new Error('rede'));
+    renderAt('/dashboard');
+    expect(await screen.findByText('Status indisponível')).toBeInTheDocument();
   });
 });

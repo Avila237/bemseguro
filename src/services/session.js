@@ -8,6 +8,7 @@ let sessionCache = {
   aggerToken: null,
   mcToken: null,
   expiresAt: 0,
+  renewedAt: 0, // timestamp (ms) da ultima renovacao bem-sucedida; 0 = nunca
   loginPromise: null,
 };
 
@@ -103,9 +104,11 @@ async function getSession() {
     try {
       const aggerToken = await loginFresh();
       const mcToken = await loginPdocs(aggerToken);
+      const agora = Date.now();
       sessionCache.aggerToken = aggerToken;
       sessionCache.mcToken = mcToken;
-      sessionCache.expiresAt = Date.now() + SESSION_TTL_MS;
+      sessionCache.expiresAt = agora + SESSION_TTL_MS;
+      sessionCache.renewedAt = agora;
       log.info('Sessao renovada. Valida por 55 minutos.');
     } finally {
       sessionCache.loginPromise = null;
@@ -129,11 +132,33 @@ function getSessionSync() {
   return null;
 }
 
+// Estado da sessao Aggilizador para leitura externa (painel admin). Nao expõe
+// tokens — apenas se esta ativa, quando expira, o TTL restante e a ultima
+// renovacao. `now` e injetavel para testes.
+function getSessionStatus(now = Date.now()) {
+  const ultima_renovacao = sessionCache.renewedAt > 0
+    ? new Date(sessionCache.renewedAt).toISOString()
+    : null;
+
+  const ativa = !!(sessionCache.aggerToken && sessionCache.mcToken && now < sessionCache.expiresAt);
+  if (!ativa) {
+    return { ativa: false, expira_em: null, ttl_segundos: 0, ultima_renovacao };
+  }
+
+  return {
+    ativa: true,
+    expira_em: new Date(sessionCache.expiresAt).toISOString(),
+    ttl_segundos: Math.max(0, Math.round((sessionCache.expiresAt - now) / 1000)),
+    ultima_renovacao,
+  };
+}
+
 module.exports = {
   loginFresh,
   loginPdocs,
   getSession,
   invalidateSession,
   getSessionSync,
+  getSessionStatus,
   SESSION_TTL_MS,
 };

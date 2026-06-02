@@ -240,7 +240,7 @@ export const SECOES = [
         'Avise o **suporte** informando o nome da seguradora e desde quando caiu.',
         'Quando o suporte confirmar que normalizou, **ligue de novo**.',
       ] },
-      { type: 'callout', variant: 'atencao', title: 'Indicador “Sessão Aggilizador” ainda em desenvolvimento', text: 'O indicador **Sessão Aggilizador** (na barra lateral e no Monitoring) mostra sempre “Ativa” no piloto — ele ainda **está em desenvolvimento** e **não deve ser usado como diagnóstico**. Para saber se a conexão caiu, olhe os **erros recentes** no Monitoring e confirme com o suporte.' },
+      { type: 'callout', variant: 'info', title: 'Indicador “Sessão Aggilizador”', text: 'O indicador **Sessão Aggilizador** (na barra lateral e no Monitoring) agora mostra o **estado real** da conexão com o Aggilizador: **verde** com mais de 10 min de sessão, **amarelo** quando está perto de expirar e **vermelho** se a sessão caiu. Atenção: ele reflete a conexão **global** com o Aggilizador (não uma seguradora específica) — para uma seguradora individual, continue usando os **erros recentes** no Monitoring.' },
       { type: 'p', text: 'Os botões **“Testar conexões”** (topo da tela) e a **engrenagem** de configuração de cada seguradora ainda estão **em breve** (em desenvolvimento).' },
     ],
   },
@@ -257,10 +257,10 @@ export const SECOES = [
       { type: 'table', head: ['Indicador', 'Saudável', 'Atenção'], rows: [
         ['**Tempo médio de cotação**', '1–3 min é normal', 'Bem acima disso = seguradoras lentas.'],
         ['**Taxa de sucesso global**', '85% ou mais', 'Caindo = mais cotações sem preço.'],
-        ['**Sessão Aggilizador**', 'Mostra sempre “Ativa” (placeholder)', '**Ainda em desenvolvimento** — não use para diagnóstico.'],
+        ['**Sessão Aggilizador**', 'Verde = sessão ativa (>10 min)', 'Amarelo = expirando; vermelho = caiu → siga o Runbook.'],
         ['**Erros (24h)**', 'Poucos / estável', 'Pulando para cima = algo quebrou.'],
       ] },
-      { type: 'callout', variant: 'atencao', title: 'Sobre o card “Sessão Aggilizador”', text: 'No piloto este card mostra **sempre “Ativa”** (com um timer fixo) — ele ainda **está em desenvolvimento** e **não reflete o estado real** da conexão. **Não o use como diagnóstico.** Se desconfiar que a sessão caiu (várias OS em erro), olhe **“Erros recentes”** e acione o suporte (ver Runbook).' },
+      { type: 'callout', variant: 'info', title: 'O que é a “Sessão Aggilizador” — e por que importa', text: 'Para cotar, o Hub mantém um **login ativo no Aggilizador** (a “sessão”), renovado automaticamente a cada ~55 minutos. Este card mostra o **estado real** dessa sessão: **verde** (mais de 10 min restantes), **amarelo** (1 a 10 min, prestes a renovar) e **vermelho** (expirada). O timer **“expira em”** e a **“última renovação”** vêm direto do servidor. Se o card ficar **vermelho** e as cotações começarem a falhar, é forte sinal de que a conexão caiu — confirme nos **“Erros recentes”** e siga o Runbook.' },
       { type: 'callout', variant: 'info', title: 'Por que o tempo médio não é “segundos”', text: 'O Hub espera as seguradoras responderem e devolverem os PDFs (o **polling**, de poucos segundos em poucos segundos). Por isso uma cotação saudável costuma levar **de 1 a 3 minutos** — não estranhe se não for instantâneo.' },
       { type: 'h3', text: 'Badge “Railway saudável”' },
       { type: 'p', text: 'No topo da tela há um selo que checa direto o servidor: **Railway saudável** (verde) significa que a base do sistema está no ar; **Railway indisponível** (vermelho) indica que o servidor caiu — siga o Runbook.' },
@@ -312,7 +312,7 @@ export const SECOES = [
 
       { type: 'h3', id: 'run-sem', text: 'Cenário 4 — Nenhuma cotação está voltando' },
       { type: 'p', text: '**Sintoma:** várias OS recentes entram em {badge:erro|Erro} ou ficam sem preço.' },
-      { type: 'callout', variant: 'atencao', title: 'Não confie no card “Sessão Aggilizador”', text: 'Ele é placeholder e mostra **sempre “Ativa”** — não serve para diagnosticar. Use os **“Erros recentes”** e o contato com o suporte.' },
+      { type: 'callout', variant: 'info', title: 'Olhe o card “Sessão Aggilizador”', text: 'Ele agora mostra o **estado real** da conexão: se estiver **vermelho** (expirada), é forte sinal de que a sessão caiu. Confirme nos **“Erros recentes”** e acione o suporte.' },
       { type: 'steps', items: [
         'Vá ao **Monitoring → “Erros recentes”** e veja se a **mesma mensagem se repete** (ex.: algo sobre sessão/login do Aggilizador).',
         'A conexão com o Aggilizador **precisa ser religada pela equipe técnica** — você não faz isso pelo painel. Acione o suporte com urgência.',
@@ -332,7 +332,7 @@ export const SECOES = [
       { type: 'h3', id: 'run-sessao', text: 'Cenário 6 — Sessão do Aggilizador expirada' },
       { type: 'p', text: '**Sintoma:** cotações novas caem em erro com mensagem de “sessão expirada” nos **Erros recentes**, ou nada volta há vários minutos.' },
       { type: 'steps', items: [
-        'Confirme em **Monitoring → “Erros recentes”** que a mensagem fala em sessão/login do Aggilizador (lembre: o card “Sessão Aggilizador” é placeholder e não serve para isso).',
+        'Confirme em **Monitoring → “Erros recentes”** que a mensagem fala em sessão/login do Aggilizador. O card **“Sessão Aggilizador”** ajuda no diagnóstico: se estiver **vermelho (expirada)**, reforça que a sessão caiu.',
         'O Hub tenta religar a sessão sozinho (ele guarda a sessão por ~55min e refaz o login quando expira). Aguarde 1–2 minutos e recote **uma** OS de teste.',
         'Se continuar falhando, **acione o suporte** — só a equipe técnica religa a sessão no servidor (inclusive quando o Aggilizador está com “sessões lotadas”).',
         'Evite recotar tudo em massa antes da sessão voltar.',

@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { NAV_ITEMS } from '../lib/nav.js';
 import { Icon, Shield } from './Icons.jsx';
 import { contarOSAtivas } from '../lib/osStats.js';
+import { getSessionStatus, formatTTL, faixaSessao, TTL_TOTAL_S } from '../lib/sessionStatus.js';
 
 // Wordmark em texto (logo provisório) — estilo do design system.
 function Wordmark() {
@@ -34,6 +35,85 @@ function Wordmark() {
         </span>
       </div>
     </div>
+  );
+}
+
+// Widget de estado real da sessão Aggilizador (rodapé). Lê GET /session/status
+// no Railway e atualiza a cada 30s. Cor por tempo restante (verde/amarelo/vermelho);
+// se o Railway não responder, mostra "Status indisponível" em cinza.
+function SessaoAggilizador() {
+  // undefined = carregando · null = indisponível · objeto = dados reais
+  const [estado, setEstado] = useState(undefined);
+
+  useEffect(() => {
+    let ativo = true;
+    const carregar = () =>
+      getSessionStatus()
+        .then(d => { if (ativo) setEstado(d); })
+        .catch(() => { if (ativo) setEstado(null); });
+    carregar();
+    const t = setInterval(carregar, 30000);
+    return () => {
+      ativo = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  const titulo = (
+    <span className="fz11 fw600 muted" style={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+      Sessão Aggilizador
+    </span>
+  );
+
+  const moldura = inner => (
+    <div style={{ padding: 12, borderTop: '1px solid var(--border)' }}>
+      <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '11px 12px' }}>
+        {inner}
+      </div>
+    </div>
+  );
+
+  // Railway não respondeu — estado desconhecido.
+  if (estado === null) {
+    return moldura(
+      <div className="row between center">
+        {titulo}
+        <span className="fz12 muted">Status indisponível</span>
+      </div>
+    );
+  }
+
+  // Carga inicial.
+  if (estado === undefined) {
+    return moldura(
+      <div className="row between center">
+        {titulo}
+        <span className="fz12 muted">Verificando…</span>
+      </div>
+    );
+  }
+
+  const f = faixaSessao(estado);
+  const pct = estado.ativa
+    ? Math.min(100, Math.max(0, Math.round((estado.ttl_segundos / TTL_TOTAL_S) * 100)))
+    : 0;
+
+  return moldura(
+    <>
+      <div className="row between center" style={{ marginBottom: 7 }}>
+        {titulo}
+        <span className={`badge ${f.badge}`} style={{ padding: '3px 8px', fontSize: 11 }}>
+          <span className="dot"></span>{f.rotulo}
+        </span>
+      </div>
+      <div className="row between center">
+        <span className="fz12 muted">Expira em</span>
+        <span className="mono fz12 fw600">{estado.ativa ? formatTTL(estado.ttl_segundos) : '--:--'}</span>
+      </div>
+      <div style={{ height: 4, borderRadius: 99, background: 'var(--border)', marginTop: 7, overflow: 'hidden' }}>
+        <div style={{ width: pct + '%', height: '100%', background: f.cor, borderRadius: 99, transition: 'width .3s' }}></div>
+      </div>
+    </>
   );
 }
 
@@ -144,22 +224,8 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Sessão Aggilizador (placeholder — sem endpoint de TTL ainda). Ver context.md. */}
-      <div style={{ padding: 12, borderTop: '1px solid var(--border)' }}>
-        <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '11px 12px' }}>
-          <div className="row between center" style={{ marginBottom: 7 }}>
-            <span className="fz11 fw600 muted" style={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>Sessão Aggilizador</span>
-            <span className="badge st-cotado" style={{ padding: '3px 8px', fontSize: 11 }}><span className="dot"></span>Ativa</span>
-          </div>
-          <div className="row between center">
-            <span className="fz12 muted">Expira em</span>
-            <span className="mono fz12 fw600">41:08</span>
-          </div>
-          <div style={{ height: 4, borderRadius: 99, background: 'var(--border)', marginTop: 7, overflow: 'hidden' }}>
-            <div style={{ width: '74%', height: '100%', background: 'var(--green)', borderRadius: 99 }}></div>
-          </div>
-        </div>
-      </div>
+      {/* Sessão Aggilizador — estado real via GET /session/status (Railway). */}
+      <SessaoAggilizador />
     </aside>
   );
 }

@@ -4,6 +4,7 @@ import { Card, Empty, Skeleton } from '../components/Ui.jsx';
 import { Icon } from '../components/Icons.jsx';
 import { numeroOS, timeAgo } from '../lib/format.js';
 import { carregarMonitoring, checarRailway } from '../lib/monitoring.js';
+import { getSessionStatus, formatTTL, faixaSessao } from '../lib/sessionStatus.js';
 
 function StatCard({ label, value, unit, icon, tint, fg, sub }) {
   const I = Icon[icon] || Icon.doc;
@@ -48,9 +49,34 @@ function SkeletonView() {
   );
 }
 
-function Conteudo({ dados }) {
+// Card "Sessão Aggilizador" com estado real (ou "Indisponível" se o Railway não
+// respondeu). `sessao`: undefined/null = indisponível · objeto = dados reais.
+function sessaoCardProps(sessao) {
+  if (sessao == null) {
+    return {
+      value: <span style={{ fontSize: 22 }}>Indisponível</span>,
+      tint: 'var(--st-pendente-bg)',
+      fg: 'var(--text-mute)',
+      sub: 'status indisponível',
+    };
+  }
+  const f = faixaSessao(sessao);
+  return {
+    value: <span style={{ fontSize: 22 }}>{f.rotulo}</span>,
+    tint: f.tint,
+    fg: f.cor,
+    sub: sessao.ativa ? (
+      <span className="mono">expira em {formatTTL(sessao.ttl_segundos)} · última renovação {timeAgo(sessao.ultima_renovacao)}</span>
+    ) : (
+      <span>sessão expirada · última renovação {timeAgo(sessao.ultima_renovacao)}</span>
+    ),
+  };
+}
+
+function Conteudo({ dados, sessao }) {
   const { tempoMedioS, tempoDelta, taxaSucesso, totalOS7, erros24h, errosDelta, serie, taxaPorSeg, errosRecentes } = dados;
   const maxDia = Math.max(...serie, 1);
+  const sessProps = sessaoCardProps(sessao);
 
   // sub do tempo médio: delta vs semana passada (queda = bom → seta verde p/ baixo).
   let subTempo = 'últimos 7 dias';
@@ -102,11 +128,11 @@ function Conteudo({ dados }) {
         />
         <StatCard
           label="Sessão Aggilizador"
-          value={<span style={{ fontSize: 22 }}>Ativa</span>}
+          value={sessProps.value}
           icon="wifi"
-          tint="var(--st-cotado-bg)"
-          fg="var(--green)"
-          sub={<span className="mono">expira em 41:08 · cache 55min</span>}
+          tint={sessProps.tint}
+          fg={sessProps.fg}
+          sub={sessProps.sub}
         />
         <StatCard
           label="Erros (24h)"
@@ -219,6 +245,7 @@ function Conteudo({ dados }) {
 
 export default function Monitoring() {
   const [dados, setDados] = useState(null);
+  const [sessao, setSessao] = useState(null); // estado real da sessão Aggilizador (null = indisponível)
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -228,9 +255,16 @@ export default function Monitoring() {
     if (inicial) setCarregando(true);
     else setAtualizando(true);
     try {
-      const [d, ok] = await Promise.all([carregarMonitoring(), checarRailway()]);
+      // A sessão é independente das métricas: se o Railway estiver fora, o card
+      // mostra "Indisponível", mas as métricas (Supabase) ainda carregam.
+      const [d, ok, sess] = await Promise.all([
+        carregarMonitoring(),
+        checarRailway(),
+        getSessionStatus().catch(() => null),
+      ]);
       setDados(d);
       setRailwayOk(ok);
+      setSessao(sess);
       setErro(null);
     } catch (e) {
       setErro(e.message || 'Erro ao carregar as métricas.');
@@ -281,7 +315,7 @@ export default function Monitoring() {
           </div>
         </Card>
       ) : (
-        <Conteudo dados={dados} />
+        <Conteudo dados={dados} sessao={sessao} />
       )}
     </Page>
   );

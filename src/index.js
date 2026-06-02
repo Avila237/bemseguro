@@ -13,6 +13,7 @@ const workerRegistry = require('./services/workerRegistry');
 const healthRouter = require('./routes/health');
 const quoteRouter = require('./routes/quote');
 const lookupRouter = require('./routes/lookup');
+const sessionRouter = require('./routes/session');
 
 const log = createLogger({ scope: 'startup' });
 const app = express();
@@ -32,6 +33,7 @@ app.use(express.json());
 app.use(healthRouter);
 app.use(quoteRouter);
 app.use(lookupRouter);
+app.use(sessionRouter);
 
 // Painel admin (React/Vite) — build estatico servido em /admin.
 // O fallback para index.html habilita o client-side routing do React Router.
