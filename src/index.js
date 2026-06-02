@@ -30,6 +30,11 @@ let encerrando = false;
 
 app.use(express.json());
 
+// Raiz (exata): redireciona para o painel admin. Rota EXATA via app.get('/') —
+// nao e middleware generico, entao nao interfere com /api, /quote, /health,
+// /session, /admin etc. O React Router/ProtectedRoute leva ao /admin/login.
+app.get('/', (req, res) => res.redirect(302, '/admin'));
+
 app.use(healthRouter);
 app.use(quoteRouter);
 app.use(lookupRouter);
