@@ -221,20 +221,49 @@ curta duração) — nunca pelo browser direto, e a anon key nunca lê o bucket.
 
 ### Extração de documentos por IA (`/extract`)
 
-Endpoints internos no Railway que recebem um documento (CNH ou CRLV), chamam a
-**Claude API** com um prompt específico e devolvem os dados estruturados. Fazem
-parte da feature de integração CRM + IA (alimentam `documentos_os.dados_extraidos`
-/ `confianca_extracao` no futuro fluxo de upload).
+Endpoints internos no Railway que recebem um documento (CNH ou CRLV), guardam o
+arquivo no **Storage**, chamam a **Claude API** para extrair os dados e persistem
+tudo em `documentos_os`. Fazem parte da feature de integração CRM + IA.
 
 - **Rotas** (`src/routes/extract.js`): `POST /extract/cnh` e `POST /extract/crlv`.
   - Auth: header **`x-secret-token`** (`RAILWAY_SECRET_TOKEN`) — mesmas chamadas
     server-to-server do `/quote`, **não** API key. Sem token → **401**.
   - Upload via **`multipart/form-data`**, campo **`arquivo`** (multer, memória).
+  - Campos do form: **`os_id`** (obrigatório) e, só para CNH, **`tipo`** opcional
+    (`cnh_segurado` default ou `cnh_condutor`); CRLV é sempre `crlv`.
   - Valida **MIME** (`image/jpeg`, `image/png`, `image/webp`, `application/pdf`)
-    → MIME fora da lista = **400**. Sem arquivo = **400**.
+    → MIME fora da lista = **400**. Sem arquivo / sem `os_id` / `tipo` de CNH
+    inválido = **400**.
   - Valida **tamanho** (máx **10MB**) → acima = **413**.
-  - Converte o arquivo para base64 e chama `extrairDocumento`. Falha da IA = **502**.
-  - Log: `[extract] tipo=cnh tamanho=Xkb mime=...`.
+  - Log: `[extract] tipo=cnh_segurado tamanho=Xkb mime=... os=...`.
+
+  **Fluxo completo de cada request:**
+  1. **Valida a OS** — `os_cotacao select('id').eq('id', os_id).maybeSingle()`.
+     OS inexistente → **404** (antes de qualquer upload ou chamada à IA). Erro de
+     banco na validação → **500**.
+  2. **Upload no Storage** — `getSupabase().storage.from('documentos-clientes')
+     .upload(path, buffer, { contentType, upsert:false })`. `path` =
+     `{os_id}/{tipo}-{timestamp}.{ext}` (timestamp em segundos; extensão derivada
+     do MIME: jpeg→`jpg`, png→`png`, webp→`webp`, pdf→`pdf`). Falha no upload →
+     **500** e **a IA não é chamada**.
+  3. **Extração por IA** — `extrairDocumento({ tipoDocumento, base64Image,
+     mimeType })` (o `tipoDocumento` é o tipo-base `cnh`/`crlv`, que seleciona o
+     prompt). Falha da IA → **502** (o arquivo já está no Storage).
+  4. **Insert em `documentos_os`** — `os_id`, `tipo`, `storage_path`,
+     `storage_bucket`, `mime_type`, `tamanho_bytes`, `dados_extraidos` (= `dados`
+     da IA), `confianca_extracao` (= **média** das confianças individuais, ou
+     `null` se vazio), `revisado:false`; `.select('id').single()`.
+  5. **Resposta 200** — `{ success, tipo, documento_id, storage_path, dados,
+     confianca, observacoes, modelo, tokensUsados }`.
+
+  **Comportamento em falhas (rollback parcial):** o upload acontece **antes** do
+  insert. Se o insert em `documentos_os` falhar (passo 4), o endpoint retorna
+  **500**, mas **o arquivo permanece no Storage** sem a row de metadados — fica um
+  órfão. Registra-se um **warning** (`Insert em documentos_os falhou (arquivo ja
+  no Storage: documentos-clientes/...)`). O mesmo vale para falha de IA (passo 3):
+  arquivo no Storage sem extração. Não há limpeza automática do órfão hoje (a
+  política de retenção de 5 anos eventualmente o cobre); reprocessar a mesma OS
+  gera um novo arquivo com timestamp diferente (sem colisão de path).
 - **Wrapper** (`src/services/anthropic.js`): `extrairDocumento({ tipoDocumento,
   base64Image, mimeType })` → `{ dados, confianca, observacoes, modelo,
   tokensUsados }`.
@@ -256,10 +285,13 @@ parte da feature de integração CRM + IA (alimentam `documentos_os.dados_extrai
   modelo, ano fab./modelo, FIPE (se visível), RENAVAM, CPF/nome/endereço do
   proprietário. Editar a extração = mexer **só** nesses `.md` (lidos e cacheados
   em runtime; não precisam de rebuild).
-- **Testes:** `tests/routes/extract.test.js` (supertest: 401 sem token, 400 sem
-  arquivo, 400 MIME inválido, 413 grande demais, 200 com dados, 502 em falha,
-  PDF) e `tests/services/anthropic.test.js` (parse robusto, montagem da
-  requisição, bloco image vs document, sem API key, 4xx não retentado).
+- **Testes:** `tests/routes/extract.test.js` (supertest, com **Supabase mockado**
+  — Storage `upload` + tabela `insert`: 401 sem token, 400 sem arquivo/sem
+  `os_id`/`tipo` inválido, 404 OS inexistente, 400 MIME inválido, 413 grande
+  demais, 200 com upload+IA+insert e `documento_id`, média de confiança, 500 em
+  falha de upload, 500 + warning em falha de insert, 502 em falha de IA, PDF/CRLV)
+  e `tests/services/anthropic.test.js` (parse robusto, montagem da requisição,
+  bloco image vs document, sem API key, 4xx não retentado).
 
 ## Estrutura do backend (Node.js)
 
