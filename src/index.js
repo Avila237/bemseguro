@@ -15,6 +15,7 @@ const quoteRouter = require('./routes/quote');
 const lookupRouter = require('./routes/lookup');
 const sessionRouter = require('./routes/session');
 const extractRouter = require('./routes/extract');
+const cotacaoComDocsRouter = require('./routes/cotacao-com-docs');
 
 const log = createLogger({ scope: 'startup' });
 const app = express();
@@ -41,6 +42,7 @@ app.use(quoteRouter);
 app.use(lookupRouter);
 app.use(sessionRouter);
 app.use(extractRouter);
+app.use(cotacaoComDocsRouter);
 
 // Painel admin (React/Vite) — build estatico servido em /admin.
 // O fallback para index.html habilita o client-side routing do React Router.

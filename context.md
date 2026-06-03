@@ -58,6 +58,7 @@ Cliente (API REST ou Painel Admin)
 | GET    | /health                      | Nenhuma    | Healthcheck                                  |
 | GET    | /session/status              | Nenhuma    | Estado da sessão Aggilizador (TTL p/ o painel) |
 | POST   | /api/v1/cotacoes             | API key    | Cria OS e dispara cotação (retorna 202)      |
+| POST   | /api/v1/cotacoes-com-docs    | API key    | Cria OS com CNH/CRLV p/ a IA extrair (202)   |
 | GET    | /api/v1/cotacoes/:id         | API key    | Status e resultados da OS                    |
 | POST   | /api/v1/lookup/placa         | API key    | Consulta dados do veículo pela placa         |
 | POST   | /extract/cnh                 | x-secret-token | Extrai dados de uma CNH via Claude API   |
@@ -84,8 +85,8 @@ Ordens de serviço de cotação.
 |---------------|-------------------------|------------------------------------------|
 | id            | uuid PK                 | gen_random_uuid()                        |
 | status        | enum `os_status`        | pendente, extraindo_documentos, revisao_manual, cotando, cotado, callback_pendente, erro, cancelada |
-| placa         | text                    |                                          |
-| cpf           | text                    |                                          |
+| placa         | text nullable           | null até a IA extrair (ver nota abaixo)  |
+| cpf           | text nullable           | null até a IA extrair (ver nota abaixo)  |
 | nome          | text nullable           |                                          |
 | email         | text nullable           |                                          |
 | cep           | text nullable           |                                          |
@@ -94,6 +95,14 @@ Ordens de serviço de cotação.
 | error_message | text nullable           | Mensagem de erro se status=erro          |
 | created_at    | timestamptz             | default now()                            |
 | updated_at    | timestamptz             | default now()                            |
+
+> **`placa` e `cpf` são nullable** (migração
+> `db/migrations/007-placa-cpf-nullable.sql`). Antes eram `NOT NULL`, mas a
+> **feature de integração CRM + IA** cria a OS em `extraindo_documentos`
+> (via `/api/v1/cotacoes-com-docs`) **antes** de conhecer placa/CPF — esses
+> campos chegam só depois que a IA lê CNH/CRLV e são preenchidos via `UPDATE`.
+> Nos fluxos diretos (`/api/v1/cotacoes`/run-quote) ambos continuam obrigatórios
+> (validados na entrada).
 
 **Status do ciclo de vida (`os_status`):** `pendente` → `cotando` → `cotado`,
 com `erro`/`cancelada` como terminais. Os três abaixo foram adicionados pela
@@ -293,6 +302,67 @@ tudo em `documentos_os`. Fazem parte da feature de integração CRM + IA.
   e `tests/services/anthropic.test.js` (parse robusto, montagem da requisição,
   bloco image vs document, sem API key, 4xx não retentado).
 
+### Cotação com documentos — `/api/v1/cotacoes-com-docs`
+
+Endpoint para o **CRM** criar uma cotação enviando os **documentos** do cliente
+(CNH/CRLV) em vez dos dados já estruturados. A OS nasce em `extraindo_documentos`
+e o preenchimento de `placa`/`cpf` (e demais campos do veículo/segurado) fica a
+cargo da **IA** (via `/extract`, no processamento async). Implementado em
+`src/routes/cotacao-com-docs.js`.
+
+**Diferença para `/api/v1/cotacoes` (run-quote):** o `/api/v1/cotacoes` recebe os
+dados **já estruturados** (formato v2 ou legado) e vai direto para `cotando`. O
+`/api/v1/cotacoes-com-docs` recebe **multipart com arquivos**, cria a OS em
+`extraindo_documentos`, e só depois a IA lê os documentos e segue o fluxo de
+cotação. É o ponto de entrada do CRM que ainda não tem os dados do veículo.
+
+- **Auth:** header **`x-api-key`** validado via RPC **`validar_api_key`** (bcrypt +
+  prefixo — mesma da Edge Function run-quote/get-cotacoes). Sem chave → **401**;
+  chave inválida/inativa → **401**; erro no RPC → **500**. Roda **antes** do
+  multer (requisição sem chave não consome o upload).
+- **Body (`multipart/form-data`):**
+  - Campos obrigatórios: `nome`, `telefone`, `cep_pernoite` (`12345678` ou
+    `12345-678`), `estado_civil`, `uso` (`passeio`|`comercial`), `dono_eh_condutor`
+    (`true`|`false`), `renovacao` (`true`|`false`).
+  - Arquivos: `cnh_segurado` (obrig.), `crlv` (obrig.), `cnh_condutor` (obrig.
+    **só se** `dono_eh_condutor=false`). MIME `jpeg/png/webp/pdf`, máx **10MB**.
+  - Opcionais: `external_ref` (ID do lead no CRM), `callback_url` (**HTTPS** —
+    validada; HTTP/ inválida → **400**).
+  - `Idempotency-Key` (header, opcional): mesma chave nas últimas 24h → **200**
+    replay com a OS anterior (sem criar OS nova). Reusa a coluna
+    `os_cotacao.idempotency_key` (índice único parcial da migração 004); trata
+    corrida `23505` como replay. (Sem comparação byte-a-byte do corpo — os
+    binários inviabilizam; a chave de uso único já protege contra duplicação.)
+- **Validações → 400:** campos obrigatórios ausentes (lista em `campos`), `uso`
+  inválido, `dono_eh_condutor`/`renovacao` fora de `true|false`, `cep_pernoite`
+  inválido, `callback_url` não-HTTPS, arquivos obrigatórios faltando. Arquivo
+  acima de 10MB → **413**; MIME não suportado → **400**.
+- **Fluxo:**
+  1. Cria a OS: `status:'extraindo_documentos'`, `nome` (coluna), `cep` (=
+     `cep_pernoite` em dígitos), `cpf:null`, `placa:null` (a IA preenche depois),
+     `api_key_id` (da chave validada), `idempotency_key`, e `dados_risco =
+     { uso, estado_civil, dono_eh_condutor, renovacao, external_ref, callback_url,
+     telefone }`. ⚠️ `telefone` **não tem coluna** em `os_cotacao` → vai em
+     `dados_risco`.
+  2. Mantém os arquivos **em memória** (não sobe no Storage aqui — quem faz isso é
+     o `/extract`).
+  3. Dispara o processamento **async (fire-and-forget)** via `fetch` para
+     **`/quote/auto-com-docs`** (a ser criado) com `x-secret-token`, passando
+     `{ os_id, form, documentos:[{ tipo, base64, mimeType, tamanho, filename }] }`.
+     A URL-base vem de `RAILWAY_URL` (fallback `http://127.0.0.1:$PORT`).
+  4. Grava `audit_log` (`endpoint:/api/v1/cotacoes-com-docs`, `auth:api_key`,
+     **payload mascarado sem binários** — `telefone:'***'`, `docs:N`,
+     `callback_url` como booleano).
+  5. Responde **202** imediato: `{ os_id, status:'extraindo_documentos',
+     external_ref, message }`.
+- **Log:** `[cotacao-com-docs] OS criada=X | placa=pendente | docs=Y arquivos`.
+  Erros não-tratados vão para o **Sentry** (tag `component: cotacao-com-docs`).
+- **Testes:** `tests/routes/cotacao-com-docs.test.js` (supertest + Supabase/multer
+  mockados): 401 sem chave, 400 sem campos/sem `cnh_segurado`/sem `crlv`/
+  `dono_eh_condutor=false` sem `cnh_condutor`/`callback_url` HTTP/`uso` inválido,
+  202 criando OS + disparando worker + audit, 3 documentos, e replay 200 por
+  Idempotency-Key.
+
 ## Estrutura do backend (Node.js)
 
 ```
@@ -305,6 +375,7 @@ bem-seguro-hub/
       lookup.js           # POST /api/v1/lookup/placa
       session.js          # GET /session/status (estado da sessão p/ o painel, CORS)
       extract.js          # POST /extract/cnh, /extract/crlv (upload + Claude API)
+      cotacao-com-docs.js # POST /api/v1/cotacoes-com-docs (multipart CRM + docs)
     prompts/
       cnh.md              # Prompt de extração da CNH (instruções p/ a Claude API)
       crlv.md             # Prompt de extração do CRLV
@@ -886,6 +957,9 @@ paralelo (`Promise.all`) e agrega tudo em memória. **Fonte de dados por card:**
 # Railway
 PORT=8080
 RAILWAY_SECRET_TOKEN=<gerar com openssl rand -hex 32>
+# Opcional: URL-base p/ o auto-disparo do worker em /api/v1/cotacoes-com-docs.
+# Ausente => usa http://127.0.0.1:$PORT (chamada local, o caso normal no Railway).
+RAILWAY_URL=
 
 # Aggilizador
 AGGER_LOGIN=<email corretora>
