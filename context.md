@@ -347,7 +347,7 @@ cotação. É o ponto de entrada do CRM que ainda não tem os dados do veículo.
   2. Mantém os arquivos **em memória** (não sobe no Storage aqui — quem faz isso é
      o `/extract`).
   3. Dispara o processamento **async (fire-and-forget)** via `fetch` para
-     **`/quote/auto-com-docs`** (a ser criado) com `x-secret-token`, passando
+     **`/quote/auto-com-docs`** (ver seção abaixo) com `x-secret-token`, passando
      `{ os_id, form, documentos:[{ tipo, base64, mimeType, tamanho, filename }] }`.
      A URL-base vem de `RAILWAY_URL` (fallback `http://127.0.0.1:$PORT`).
   4. Grava `audit_log` (`endpoint:/api/v1/cotacoes-com-docs`, `auth:api_key`,
@@ -363,6 +363,78 @@ cotação. É o ponto de entrada do CRM que ainda não tem os dados do veículo.
   202 criando OS + disparando worker + audit, 3 documentos, e replay 200 por
   Idempotency-Key.
 
+### Worker de cotação com documentos — `/quote/auto-com-docs`
+
+Endpoint **interno** que recebe os documentos (base64) + dados do formulário e
+processa tudo num **Worker Thread**: extrai por IA, faz o merge, valida cruzado e
+decide entre **cotar** ou mandar para **revisão manual**. É o passo seguinte do
+`/api/v1/cotacoes-com-docs` (que o dispara). Rota em
+`src/routes/quote-auto-com-docs.js`; lógica em
+`src/workers/quote-com-docs-worker.js` (`processarComDocs`, exportada e testável).
+
+- **Auth:** `x-secret-token` (`RAILWAY_SECRET_TOKEN`), igual ao `/quote/auto`.
+  Sem token → **401**; sem `os_id` ou `documentos` vazio → **400**. Responde
+  **202** imediato `{ accepted:true, os_id }` e processa em background.
+- **Limite de payload (50mb):** o body traz os documentos em **base64** (grande),
+  então **só esta rota** usa `express.json({ limit: '50mb' })`; as demais seguem
+  no default de **100kb**. Em `src/index.js`, o parser de 50mb é montado **antes**
+  do `express.json()` global no path `/quote/auto-com-docs` (o parser global pula
+  bodies já parseados via `req._body`). Sem isso, o fluxo
+  `/api/v1/cotacoes-com-docs → /quote/auto-com-docs` estourava
+  **`PayloadTooLargeError: request entity too large`**.
+- A rota obtém a **sessão** (`getSession`, p/ o `mcToken` do lookup FIPE) —
+  *best-effort*: se o login falhar, segue sem token e o worker manda p/ revisão
+  manual ao não validar a placa, em vez de travar a OS.
+
+**Fluxo do worker (`processarComDocs`):**
+
+1. **Extração paralela** — `Promise.all` chamando o endpoint interno
+   `/extract/{cnh|crlv}` para cada documento (multipart com o arquivo decodificado
+   + `os_id` + `tipo`). Cada chamada faz upload no Storage + IA + insert em
+   `documentos_os`. **Qualquer falha** → OS vira **`erro`** com
+   `"Falha na extração do documento: {tipo}. Erro: {detalhe}"`.
+2. **Merge form + IA** — combina o formulário (nome, telefone, cep_pernoite,
+   estado_civil, uso, dono_eh_condutor, renovacao) com a **CNH do segurado** (cpf,
+   data_nascimento, sexo, validade_cnh), o **CRLV** (placa, chassi, marca, modelo,
+   anos, cpf_proprietario) e a **CNH do condutor** (se houver). Monta `dados_risco`
+   no formato v2 (`segurado`/`veiculo`/`condutor`).
+3. **Validações cruzadas** — coleta TODOS os problemas:
+   - **(a) Confiança IA** — campo crítico (`cpf`, `placa`, `data_nascimento`,
+     `chassi`, `nome`) com confiança `< 0.7` (ou ausente) →
+     `"Baixa confiança na extração do campo {campo}"`.
+   - **(b) Nome form vs CNH** — similaridade `< 0.8` (via `utils/similaridade.js`)
+     → `"Nome no formulário ('{form}') diferente do nome na CNH ('{cnh}')"`.
+   - **(c) CNH do segurado vencida** — `validade_cnh < hoje` →
+     `"CNH do segurado vencida em {data}"`.
+   - **(d) CNH do condutor vencida** (se aplicável) → idem para o condutor.
+   - **(e) CPF proprietário ≠ CPF segurado com `dono_eh_condutor=true`** →
+     `"CPF do proprietário no CRLV (...) diferente do CPF do segurado na CNH (...),
+     mas formulário indicou que dono é condutor"`.
+   - **(f) Lookup FIPE** — `buscarFipePorPlaca(placa, mcToken)`; se não encontrar →
+     `"Não foi possível identificar o veículo via lookup FIPE pela placa {placa}"`.
+     Se encontrar, o `fipe` (e ano/chassi faltantes) **enriquece** o payload.
+4. **Decisão** — atualiza a OS com `placa`/`cpf`/`dados_risco` e:
+   - **Sem problemas** → `status='cotando'` e **dispara a cotação real** via
+     `POST /quote/auto` (reaproveita o worker de cotação existente) com o payload
+     v2. Se o disparo falhar, a OS vira `erro`.
+   - **Com problemas** → `status='revisao_manual'`, `error_message` = todos os
+     problemas concatenados por `\n` (mensagens amigáveis).
+- **Logs:** `[quote-com-docs] OS={id} iniciando extração de {N} documentos` /
+  `... extração concluída em {ms}ms` / `... validações cruzadas: {N} problemas
+  encontrados` / `... → revisão manual` ou `... → cotando`. Erros não-tratados →
+  **Sentry** (tags `component: quote-com-docs-worker`, `os_id`).
+- **`src/utils/similaridade.js`** — `compararNomes(a, b)` → `{ similaridade
+  (0–1), igual (≥0.8) }`. Normaliza (lowercase, sem acentos, sem pontuação, sem
+  conectivos `da/de/do/...`) e usa **Levenshtein normalizado** (`1 −
+  distância/maxLen`). Também exporta `normalizar` e `levenshtein`.
+- **Testes:** `tests/workers/quote-com-docs-worker.test.js` (fluxo feliz →
+  cotando; falha de extração → erro; confiança baixa / CNH vencida / nome
+  divergente / FIPE ausente / CPF divergente → revisão manual; múltiplos problemas
+  listados), `tests/routes/quote-auto-com-docs.test.js` (401, 400 sem os_id, 202,
+  worker disparado), `tests/utils/similaridade.test.js` e
+  `tests/routes/payload-limit.test.js` (regressão do limite: 202 com body > 100kb
+  na rota de docs, 413 em rota default).
+
 ## Estrutura do backend (Node.js)
 
 ```
@@ -376,6 +448,7 @@ bem-seguro-hub/
       session.js          # GET /session/status (estado da sessão p/ o painel, CORS)
       extract.js          # POST /extract/cnh, /extract/crlv (upload + Claude API)
       cotacao-com-docs.js # POST /api/v1/cotacoes-com-docs (multipart CRM + docs)
+      quote-auto-com-docs.js # POST /quote/auto-com-docs (dispara o worker de docs)
     prompts/
       cnh.md              # Prompt de extração da CNH (instruções p/ a Claude API)
       crlv.md             # Prompt de extração do CRLV
@@ -387,10 +460,12 @@ bem-seguro-hub/
       supabase.js         # Client Supabase (service_role)
     workers/
       quote-worker.js     # Worker Thread: cotação + polling + save
+      quote-com-docs-worker.js # Worker: extração IA + merge + validação cruzada + decisão
     utils/
       parsers.js          # parseDataNasc, parseEstadoCivil, parseSexo, etc.
       auth.js             # Middleware de API key
       logger.js           # Log estruturado com contexto
+      similaridade.js     # compararNomes (Levenshtein) p/ validação cruzada
     config/
       seguradoras.js      # Carrega seguradoras do Supabase no startup
   tests/

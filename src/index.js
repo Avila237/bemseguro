@@ -16,6 +16,7 @@ const lookupRouter = require('./routes/lookup');
 const sessionRouter = require('./routes/session');
 const extractRouter = require('./routes/extract');
 const cotacaoComDocsRouter = require('./routes/cotacao-com-docs');
+const quoteComDocsRouter = require('./routes/quote-auto-com-docs');
 
 const log = createLogger({ scope: 'startup' });
 const app = express();
@@ -30,6 +31,12 @@ const COTANDO_ORFA_MS = 5 * 60 * 1000;
 let servidorAtivo = null;
 let encerrando = false;
 
+// A rota /quote/auto-com-docs recebe os documentos em base64 (payload grande),
+// entao usa um limite de 50mb. Este parser especifico vem ANTES do default para
+// que o express.json() global PULE esse path (body-parser ignora quem ja tem
+// req._body setado) — assim as demais rotas seguem no limite default de 100kb e
+// so a de docs aceita ate 50mb.
+app.use('/quote/auto-com-docs', express.json({ limit: '50mb' }));
 app.use(express.json());
 
 // Raiz (exata): redireciona para o painel admin. Rota EXATA via app.get('/') —
@@ -43,6 +50,7 @@ app.use(lookupRouter);
 app.use(sessionRouter);
 app.use(extractRouter);
 app.use(cotacaoComDocsRouter);
+app.use(quoteComDocsRouter);
 
 // Painel admin (React/Vite) — build estatico servido em /admin.
 // O fallback para index.html habilita o client-side routing do React Router.
