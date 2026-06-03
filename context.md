@@ -167,6 +167,54 @@ Log de todas as chamadas à API.
 | duration_ms     | integer nullable        |                                        |
 | created_at      | timestamptz             |                                        |
 
+### documentos_os
+Referências aos documentos (CNH/CRLV) enviados via CRM e lidos pela IA. Criada
+pela migração `db/migrations/006-documentos-os.sql`. **Depende da feature de
+integração CRM + IA** (mesma da migração 005). O arquivo binário fica no
+**Storage** (bucket `documentos-clientes`); aqui guardamos só a **referência**
+(`storage_bucket` + `storage_path`) e o resultado da extração.
+
+| Coluna             | Tipo                    | Notas                                            |
+|--------------------|-------------------------|--------------------------------------------------|
+| id                 | uuid PK                 | `gen_random_uuid()`                              |
+| os_id              | uuid FK → os_cotacao    | `ON DELETE CASCADE` (apaga docs junto com a OS)  |
+| tipo               | text                    | `cnh_segurado` / `cnh_condutor` / `crlv` (CHECK) |
+| storage_path       | text                    | Caminho do arquivo no bucket                     |
+| storage_bucket     | text                    | default `documentos-clientes`                    |
+| mime_type          | text nullable           | Ex.: `image/jpeg`, `application/pdf`             |
+| tamanho_bytes      | integer nullable        |                                                  |
+| dados_extraidos    | jsonb nullable          | Resultado da extração pela IA                    |
+| confianca_extracao | numeric(3,2) nullable   | 0.00–1.00 (confiança da IA)                      |
+| revisado           | boolean                 | default `false`                                  |
+| revisado_por       | uuid FK → auth.users    | Quem revisou (nullable até a revisão)            |
+| revisado_em        | timestamptz nullable    |                                                  |
+| created_at         | timestamptz             | default `now()`                                  |
+| updated_at         | timestamptz             | default `now()`, mantido por trigger             |
+
+**RLS:** usuário `authenticated` pode `SELECT`/`INSERT`/`UPDATE` os **metadados**
+(policies `documentos_os_select_auth` / `_insert_auth` / `_update_auth`, na
+migração 006). A escrita do **arquivo** no Storage é exclusiva do `service_role`.
+
+> A migração 006 também declara `update_updated_at_column()` via
+> `create or replace` (o schema inicial não está versionado no repo, então não se
+> pode assumir que a função já existe) e cria o trigger `documentos_os_updated_at`.
+
+### Storage — bucket `documentos-clientes`
+Bucket **privado** (sem acesso público) para os arquivos de CNH/CRLV. Todo acesso
+passa pelo **backend com a service_role** (download direto ou URL assinada de
+curta duração) — nunca pelo browser direto, e a anon key nunca lê o bucket.
+
+- **Estrutura de paths:** `{os_id}/{tipo}-{timestamp}.{ext}`
+  (ex.: `abc123/cnh_segurado-20260603.jpg`). Agrupar por `os_id` facilita
+  listar/limpar todos os documentos de uma OS de uma vez.
+- **Retenção:** 5 anos a partir de `created_at` — **política, ainda não
+  automatizada** (hoje é só diretriz; futuramente varrer + remover via pg_cron ou
+  Edge Function).
+- **Criação manual:** o bucket é criado **manualmente** no Supabase Dashboard
+  (a migração 006 **não** cria o bucket). Passo a passo, políticas de RLS do
+  Storage (só `service_role` lê/escreve) e exemplos de upload/download/URL
+  assinada no backend: ver **`docs/storage-documentos.md`**.
+
 ## Estrutura do backend (Node.js)
 
 ```
