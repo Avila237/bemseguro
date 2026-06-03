@@ -1,6 +1,7 @@
 // Inicializacao do Sentry — DEVE ser carregado ANTES de qualquer outro require
 // (a 1a linha de src/index.js: require('./instrument')). So assim o Sentry
 // consegue instrumentar os modulos importados depois.
+require('dotenv').config();
 const Sentry = require("@sentry/node");
 
 if (process.env.SENTRY_DSN) {

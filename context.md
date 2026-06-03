@@ -705,6 +705,18 @@ paralelo (`Promise.all`) e agrega tudo em memória. **Fonte de dados por card:**
 - O Jest da API ignora `admin/` (via `jest.testPathIgnorePatterns`).
 - Rodar com `cd admin && npm test`.
 
+### Rodar o backend localmente
+
+- Instalar deps: `npm install` (na raiz).
+- Configurar o `.env` na raiz (ver "Variáveis de ambiente" abaixo) — sem
+  `SUPABASE_*` / `AGGER_*` a API sobe, mas cotações e queries falham.
+- Subir a API: **`npm run dev`** ou **`npm start`** — ambos rodam `node
+  src/index.js` (são equivalentes; `dev` existe por convenção). A porta padrão é
+  `8080` (`PORT` no `.env`) e a raiz `/` redireciona para `/admin`.
+- Painel admin: build estático servido pela API em `/admin` após `npm run
+  build:admin`, ou dev server do Vite com `npm run dev:admin` (ver "Painel admin").
+- Testes do backend: `npm test` (Jest na raiz; ignora `admin/`).
+
 ### Build em produção (Docker)
 
 - `Dockerfile` faz **multi-stage build**: o stage 1 instala as deps do admin e roda
