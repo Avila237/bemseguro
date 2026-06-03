@@ -60,8 +60,12 @@ Cliente (API REST ou Painel Admin)
 | POST   | /api/v1/cotacoes             | API key    | Cria OS e dispara cotação (retorna 202)      |
 | GET    | /api/v1/cotacoes/:id         | API key    | Status e resultados da OS                    |
 | POST   | /api/v1/lookup/placa         | API key    | Consulta dados do veículo pela placa         |
+| POST   | /extract/cnh                 | x-secret-token | Extrai dados de uma CNH via Claude API   |
+| POST   | /extract/crlv                | x-secret-token | Extrai dados de um CRLV via Claude API   |
 
 Auth via header `x-api-key`, validado contra hash bcrypt na tabela `api_keys`.
+As rotas internas `/quote/*` e `/extract/*` usam `x-secret-token`
+(`RAILWAY_SECRET_TOKEN`), não API key — são chamadas server-to-server.
 
 ## Seguradoras configuradas
 
@@ -215,6 +219,48 @@ curta duração) — nunca pelo browser direto, e a anon key nunca lê o bucket.
   Storage (só `service_role` lê/escreve) e exemplos de upload/download/URL
   assinada no backend: ver **`docs/storage-documentos.md`**.
 
+### Extração de documentos por IA (`/extract`)
+
+Endpoints internos no Railway que recebem um documento (CNH ou CRLV), chamam a
+**Claude API** com um prompt específico e devolvem os dados estruturados. Fazem
+parte da feature de integração CRM + IA (alimentam `documentos_os.dados_extraidos`
+/ `confianca_extracao` no futuro fluxo de upload).
+
+- **Rotas** (`src/routes/extract.js`): `POST /extract/cnh` e `POST /extract/crlv`.
+  - Auth: header **`x-secret-token`** (`RAILWAY_SECRET_TOKEN`) — mesmas chamadas
+    server-to-server do `/quote`, **não** API key. Sem token → **401**.
+  - Upload via **`multipart/form-data`**, campo **`arquivo`** (multer, memória).
+  - Valida **MIME** (`image/jpeg`, `image/png`, `image/webp`, `application/pdf`)
+    → MIME fora da lista = **400**. Sem arquivo = **400**.
+  - Valida **tamanho** (máx **10MB**) → acima = **413**.
+  - Converte o arquivo para base64 e chama `extrairDocumento`. Falha da IA = **502**.
+  - Log: `[extract] tipo=cnh tamanho=Xkb mime=...`.
+- **Wrapper** (`src/services/anthropic.js`): `extrairDocumento({ tipoDocumento,
+  base64Image, mimeType })` → `{ dados, confianca, observacoes, modelo,
+  tokensUsados }`.
+  - Modelo **`claude-sonnet-4-5`** (override via env `ANTHROPIC_MODEL`).
+  - Chama a Messages API por `fetch` (`https://api.anthropic.com/v1/messages`,
+    header `anthropic-version: 2023-06-01`). PDF vira bloco `document`; imagem,
+    bloco `image`.
+  - **Parse robusto** (`extrairJSON`): a Claude pode devolver prosa/markdown ao
+    redor do JSON — tenta o texto cru, remove cercas ```` ```json ````, e recorta
+    do primeiro `{` ao último `}`.
+  - **Retry exponencial** via `retryComBackoff` (`src/utils/retry.js`) — 429/5xx/
+    timeout/rede; 4xx de dados/auth não são retentados.
+  - Exceptions capturadas no **Sentry** com tags `component: anthropic,
+    operation: extrair_documento`.
+- **Prompts** (`src/prompts/cnh.md`, `src/prompts/crlv.md`): instruções de
+  extração, em português, pedindo **APENAS JSON** (sem markdown) no formato
+  `{ dados, confianca, observacoes }` com **confiança 0–1 por campo**. CNH: nome,
+  CPF, data de nascimento (ISO), sexo (M/F), validade. CRLV: placa, chassi, marca,
+  modelo, ano fab./modelo, FIPE (se visível), RENAVAM, CPF/nome/endereço do
+  proprietário. Editar a extração = mexer **só** nesses `.md` (lidos e cacheados
+  em runtime; não precisam de rebuild).
+- **Testes:** `tests/routes/extract.test.js` (supertest: 401 sem token, 400 sem
+  arquivo, 400 MIME inválido, 413 grande demais, 200 com dados, 502 em falha,
+  PDF) e `tests/services/anthropic.test.js` (parse robusto, montagem da
+  requisição, bloco image vs document, sem API key, 4xx não retentado).
+
 ## Estrutura do backend (Node.js)
 
 ```
@@ -226,8 +272,13 @@ bem-seguro-hub/
       quote.js            # POST /api/v1/cotacoes, GET /api/v1/cotacoes/:id
       lookup.js           # POST /api/v1/lookup/placa
       session.js          # GET /session/status (estado da sessão p/ o painel, CORS)
+      extract.js          # POST /extract/cnh, /extract/crlv (upload + Claude API)
+    prompts/
+      cnh.md              # Prompt de extração da CNH (instruções p/ a Claude API)
+      crlv.md             # Prompt de extração do CRLV
     services/
       aggilizador.js      # login, calcularV2, montagem de payload
+      anthropic.js        # Wrapper da Claude API (extrairDocumento, parse robusto)
       session.js          # Cache de token compartilhado (TTL 55min)
       fipe.js             # 4 estratégias de resolução FIPE
       supabase.js         # Client Supabase (service_role)
@@ -814,7 +865,8 @@ SUPABASE_ANON_KEY=<anon key>
 SUPABASE_SERVICE_ROLE_KEY=<service role key>
 
 # Anthropic
-ANTHROPIC_API_KEY=<api key>
+ANTHROPIC_API_KEY=<api key>           # usada pela extração de documentos (/extract)
+ANTHROPIC_MODEL=claude-sonnet-4-5     # opcional; default do wrapper se ausente
 
 # Sentry (monitoring de erros — vazio desativa)
 SENTRY_DSN=<dsn do projeto Sentry>
