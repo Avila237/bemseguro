@@ -184,6 +184,17 @@ a:hover { text-decoration: underline; }
 .st-cancelada { background: var(--st-cancelada-bg); color: var(--st-cancelada-fg); }
 .st-cancelada .dot { background: var(--st-cancelada-dot); }
 
+/* Status da feature CRM + IA (ver context.md) */
+/* extraindo_documentos — azul (em processamento); dot pulsa como "cotando" */
+.st-extraindo_documentos { background: var(--st-cotando-bg); color: var(--st-cotando-fg); }
+.st-extraindo_documentos .dot { background: var(--st-cotando-dot); animation: pulse 1.2s ease-in-out infinite; }
+/* revisao_manual — âmbar (atenção do operador) */
+.st-revisao_manual { background: var(--st-cancelada-bg); color: var(--st-cancelada-fg); }
+.st-revisao_manual .dot { background: var(--st-cancelada-dot); }
+/* callback_pendente — azul claro (em transição) */
+.st-callback_pendente { background: var(--blue-tint); color: var(--blue-text); }
+.st-callback_pendente .dot { background: var(--blue); }
+
 @keyframes pulse {
   0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--st-cotando-dot); }
   50% { opacity: 0.55; box-shadow: 0 0 0 4px transparent; }

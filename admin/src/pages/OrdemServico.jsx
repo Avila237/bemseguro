@@ -9,8 +9,11 @@ import { carregarLista, contarStatus, cancelarOS, PAGE_SIZE } from '../lib/orden
 const TABS = [
   { id: 'todos', label: 'Todos' },
   { id: 'pendente', label: 'Pendente' },
+  { id: 'extraindo_documentos', label: 'Extraindo documentos' },
+  { id: 'revisao_manual', label: 'Revisão manual' },
   { id: 'cotando', label: 'Cotando' },
   { id: 'cotado', label: 'Cotado' },
+  { id: 'callback_pendente', label: 'Aguardando CRM' },
   { id: 'erro', label: 'Erro' },
   { id: 'cancelada', label: 'Cancelada' },
 ];
@@ -130,7 +133,7 @@ export default function OrdemServico() {
   const [page, setPage] = useState(0);
 
   const [dados, setDados] = useState({ rows: [], total: 0, pageSize: PAGE_SIZE });
-  const [counts, setCounts] = useState({ todos: 0, pendente: 0, cotando: 0, cotado: 0, erro: 0, cancelada: 0 });
+  const [counts, setCounts] = useState({ todos: 0, pendente: 0, extraindo_documentos: 0, revisao_manual: 0, cotando: 0, cotado: 0, callback_pendente: 0, erro: 0, cancelada: 0 });
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
 

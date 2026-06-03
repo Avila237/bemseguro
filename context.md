@@ -79,7 +79,7 @@ Ordens de serviço de cotação.
 | Coluna        | Tipo                    | Notas                                    |
 |---------------|-------------------------|------------------------------------------|
 | id            | uuid PK                 | gen_random_uuid()                        |
-| status        | enum                    | pendente, cotando, cotado, erro, cancelada |
+| status        | enum `os_status`        | pendente, extraindo_documentos, revisao_manual, cotando, cotado, callback_pendente, erro, cancelada |
 | placa         | text                    |                                          |
 | cpf           | text                    |                                          |
 | nome          | text nullable           |                                          |
@@ -90,6 +90,25 @@ Ordens de serviço de cotação.
 | error_message | text nullable           | Mensagem de erro se status=erro          |
 | created_at    | timestamptz             | default now()                            |
 | updated_at    | timestamptz             | default now()                            |
+
+**Status do ciclo de vida (`os_status`):** `pendente` → `cotando` → `cotado`,
+com `erro`/`cancelada` como terminais. Os três abaixo foram adicionados pela
+migração `db/migrations/005-status-novos-extracao-callback.sql` e **dependem da
+feature de integração CRM + IA** (leitura de documentos por IA e reenvio da
+cotação ao CRM) — só aparecem quando essa integração estiver ativa:
+
+- **`extraindo_documentos`** — a IA está lendo CNH/CRLV (transitório, segundos).
+  Azul; o detalhe da OS faz polling enquanto está neste estado (como em `cotando`).
+- **`revisao_manual`** — a IA achou conflito entre o formulário e os documentos;
+  **espera ação do operador** (abrir a OS, confirmar/corrigir antes de cotar). Âmbar.
+- **`callback_pendente`** — cotação pronta, mas o callback para o CRM falhou;
+  **retry automático** pendente. Azul claro (em transição).
+
+Apresentação centralizada em `admin/src/lib/format.js` → **`STATUS_META`**
+(`{ label, classe }`, fonte única; `STATUS_LABEL` é derivado dela), com as classes
+`.st-extraindo_documentos` / `.st-revisao_manual` / `.st-callback_pendente` em
+`theme.css`. Reaproveitada por `StatusBadge`, pelos filtros da Lista de OS
+(`TABS`), pelos contadores (`contarStatus`/Dashboard) e pela Ajuda (artigo 04).
 
 ### cotacoes
 Resultados por seguradora.

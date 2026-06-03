@@ -9,7 +9,7 @@ function inicioDoDia(offsetDias = 0) {
   return d;
 }
 
-const STATUS_BASE = { pendente: 0, cotando: 0, cotado: 0, erro: 0, cancelada: 0 };
+const STATUS_BASE = { pendente: 0, extraindo_documentos: 0, revisao_manual: 0, cotando: 0, cotado: 0, callback_pendente: 0, erro: 0, cancelada: 0 };
 
 // Carrega todos os indicadores do Dashboard via Supabase (anon key, sob RLS do
 // usuário autenticado). Lança em caso de erro de query.

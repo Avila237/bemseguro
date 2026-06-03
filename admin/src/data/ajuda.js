@@ -144,7 +144,7 @@ export const SECOES = [
   /* ===================================================================== 04 */
   {
     id: 'acompanhando', num: '04', label: 'Acompanhando OS', icon: 'list',
-    kw: 'status pendente cotando cotado erro cancelada recotar cancelar acoes pdf detalhe lista ordens erros recentes',
+    kw: 'status pendente cotando cotado erro cancelada recotar cancelar acoes pdf detalhe lista ordens erros recentes extraindo documentos revisao manual aguardando crm callback ia cnh crlv',
     title: 'Acompanhando OS',
     lead: 'Como ler o status de cada cotação, abrir o detalhe e usar as ações de recotar e cancelar.',
     blocks: [
@@ -152,11 +152,16 @@ export const SECOES = [
       { type: 'h3', text: 'O que cada status significa' },
       { type: 'statuses', items: [
         ['pendente', 'Pendente', 'Criada, mas a cotação ainda não foi disparada. Costuma durar só um instante.'],
+        ['extraindo_documentos', 'Extraindo documentos', 'A IA está lendo os documentos (CNH/CRLV) para preencher os dados. Dura só alguns segundos.'],
+        ['revisao_manual', 'Revisão manual', 'A IA detectou uma inconsistência entre os dados do formulário e os documentos. Abra a OS, confira e confirme/corrija os dados antes de cotar.'],
         ['cotando', 'Cotando', 'O Hub está perguntando às seguradoras. Aguarde — os preços chegam aos poucos.'],
         ['cotado', 'Cotado', 'Pronto! Pelo menos uma seguradora devolveu preço. Pode abrir e enviar ao cliente.'],
+        ['callback_pendente', 'Aguardando CRM', 'A cotação ficou pronta e o sistema está tentando enviá-la de volta ao CRM. O reenvio é automático (retry) — não precisa fazer nada.'],
         ['erro', 'Erro', 'Algo impediu a cotação (ex.: a conexão com o Aggilizador caiu). O motivo aparece em Monitoring → “Erros recentes”; veja lá e recote.'],
         ['cancelada', 'Cancelada', 'Encerrada por um operador. Não recebe mais preços.'],
       ] },
+      { type: 'callout', variant: 'atencao', title: '“Revisão manual” pede a sua ação', text: 'Diferente dos outros, **Revisão manual** não anda sozinho: a IA achou um conflito entre o formulário e os documentos (CNH/CRLV) e **espera por você**. Abra a OS, confirme ou corrija os dados e siga — só então a cotação é disparada.' },
+      { type: 'callout', variant: 'info', title: 'Estados da integração com o CRM/IA', text: '**Extraindo documentos**, **Revisão manual** e **Aguardando CRM** fazem parte da integração automática com o CRM (leitura de documentos por IA e reenvio da cotação). Você verá esses status conforme essa integração for ativada.' },
       { type: 'callout', variant: 'info', title: 'Onde ver o motivo de um erro', text: 'O **detalhe da OS não mostra a mensagem de erro**. Para saber por que uma OS deu erro, vá em **Monitoring → “Erros recentes”** — lá aparece a OS afetada e o motivo.' },
       { type: 'h3', text: 'Abrir o detalhe' },
       { type: 'p', text: 'Clique em qualquer linha da lista para abrir a OS. Lá você vê os dados do cliente e do veículo, os cards de cotação por seguradora (com o **Melhor Preço** em destaque) e o JSON dos dados de risco. Se nenhuma seguradora retornar preço, o detalhe mostra **“Nenhuma seguradora retornou prêmio”** — tente recotar ou confira os dados de risco.' },

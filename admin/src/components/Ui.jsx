@@ -1,7 +1,7 @@
 // Primitivos visuais reutilizáveis (portados do design system "Clareza
 // Operacional"). Usam as classes/tokens de theme.css.
 import { Icon } from './Icons.jsx';
-import { STATUS_LABEL, segVisual } from '../lib/format.js';
+import { STATUS_META, segVisual } from '../lib/format.js';
 
 // ---- Card ----
 export function Card({ title, action, children, pad = true, className = '', style }) {
@@ -20,10 +20,11 @@ export function Card({ title, action, children, pad = true, className = '', styl
 
 // ---- Status pill ----
 export function StatusBadge({ status }) {
+  const meta = STATUS_META[status];
   return (
-    <span className={'badge st-' + status}>
+    <span className={'badge ' + (meta?.classe || 'st-pendente')}>
       <span className="dot"></span>
-      {STATUS_LABEL[status] || status}
+      {meta?.label || status}
     </span>
   );
 }

@@ -183,9 +183,10 @@ export default function DetalheOS() {
 
   const status = os?.status;
 
-  // Polling a cada 5s enquanto a OS está "cotando".
+  // Polling a cada 5s enquanto a OS está em processamento (o sistema avança
+  // sozinho): "cotando" ou "extraindo_documentos" (IA lendo CNH/CRLV).
   useEffect(() => {
-    if (status !== 'cotando') return;
+    if (status !== 'cotando' && status !== 'extraindo_documentos') return;
     const t = setInterval(() => fetchOS(), 5000);
     return () => clearInterval(t);
   }, [status, fetchOS]);

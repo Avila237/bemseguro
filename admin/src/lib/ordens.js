@@ -1,8 +1,21 @@
 import { supabase } from './supabase.js';
-import { veiculoDe } from './format.js';
+import { veiculoDe, STATUS_META } from './format.js';
+
+// Reexportado p/ quem importa de `ordens.js` (rótulo + classe de cada status).
+export { STATUS_META };
 
 export const PAGE_SIZE = 10;
-export const STATUS_LISTA = ['pendente', 'cotando', 'cotado', 'erro', 'cancelada'];
+// Ciclo de vida da OS (inclui os estados da feature CRM + IA).
+export const STATUS_LISTA = [
+  'pendente',
+  'extraindo_documentos',
+  'revisao_manual',
+  'cotando',
+  'cotado',
+  'callback_pendente',
+  'erro',
+  'cancelada',
+];
 
 // Aplica os filtros comuns (exceto paginação/ordenação) a uma query de os_cotacao.
 function aplicarFiltros(q, { status, busca, ramo, de, ate } = {}) {
@@ -73,7 +86,7 @@ export async function contarStatus(params = {}) {
   const { data, error } = await q;
   if (error) throw new Error(error.message || 'Falha ao contar OS');
 
-  const counts = { todos: 0, pendente: 0, cotando: 0, cotado: 0, erro: 0, cancelada: 0 };
+  const counts = { todos: 0, pendente: 0, extraindo_documentos: 0, revisao_manual: 0, cotando: 0, cotado: 0, callback_pendente: 0, erro: 0, cancelada: 0 };
   (data || []).forEach(o => {
     counts.todos++;
     if (counts[o.status] != null) counts[o.status]++;

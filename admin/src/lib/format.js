@@ -69,14 +69,25 @@ export function dataHora(iso) {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-// Rótulo legível por status (enum do banco).
-export const STATUS_LABEL = {
-  pendente: 'Pendente',
-  cotando: 'Cotando',
-  cotado: 'Cotado',
-  erro: 'Erro',
-  cancelada: 'Cancelada',
+// Fonte única de apresentação de cada status da OS: rótulo legível + classe de
+// badge (cor). `classe` casa com as classes `.st-*` de theme.css. Ordem segue o
+// ciclo de vida da OS. Os 3 estados de extração/callback dependem da feature de
+// integração CRM + IA (ver context.md).
+export const STATUS_META = {
+  pendente:             { label: 'Pendente',              classe: 'st-pendente' },
+  extraindo_documentos: { label: 'Extraindo documentos',  classe: 'st-extraindo_documentos' }, // azul — IA lendo CNH/CRLV
+  revisao_manual:       { label: 'Revisão manual',        classe: 'st-revisao_manual' },        // âmbar — atenção do operador
+  cotando:              { label: 'Cotando',               classe: 'st-cotando' },
+  cotado:               { label: 'Cotado',                classe: 'st-cotado' },
+  callback_pendente:    { label: 'Aguardando CRM',        classe: 'st-callback_pendente' },     // azul claro — em transição
+  erro:                 { label: 'Erro',                  classe: 'st-erro' },
+  cancelada:            { label: 'Cancelada',             classe: 'st-cancelada' },
 };
+
+// Rótulo legível por status (derivado de STATUS_META — compat com usos existentes).
+export const STATUS_LABEL = Object.fromEntries(
+  Object.entries(STATUS_META).map(([k, v]) => [k, v.label])
+);
 
 // Nº de OS curto e estável a partir do uuid (não há coluna `numero` no banco).
 export function numeroOS(id) {

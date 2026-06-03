@@ -16,7 +16,33 @@ vi.mock('../../lib/supabase.js', () => {
   return { supabase: { from: () => make() } };
 });
 
-import { cancelarOS } from '../ordens.js';
+import { cancelarOS, STATUS_META, STATUS_LISTA } from '../ordens.js';
+
+describe('STATUS_META — novos status (integração CRM + IA)', () => {
+  test('extraindo_documentos: rótulo "Extraindo documentos" e classe azul (st-cotando reaproveitado p/ cor)', () => {
+    expect(STATUS_META.extraindo_documentos.label).toBe('Extraindo documentos');
+    expect(STATUS_META.extraindo_documentos.classe).toBe('st-extraindo_documentos');
+  });
+
+  test('revisao_manual: rótulo "Revisão manual" e classe âmbar', () => {
+    expect(STATUS_META.revisao_manual.label).toBe('Revisão manual');
+    expect(STATUS_META.revisao_manual.classe).toBe('st-revisao_manual');
+  });
+
+  test('callback_pendente: rótulo "Aguardando CRM" e classe azul claro', () => {
+    expect(STATUS_META.callback_pendente.label).toBe('Aguardando CRM');
+    expect(STATUS_META.callback_pendente.classe).toBe('st-callback_pendente');
+  });
+
+  test('mantém os status originais (label + classe)', () => {
+    expect(STATUS_META.cotado.label).toBe('Cotado');
+    expect(STATUS_META.cancelada.classe).toBe('st-cancelada');
+  });
+
+  test('STATUS_LISTA inclui os 3 novos status no ciclo de vida', () => {
+    expect(STATUS_LISTA).toEqual(expect.arrayContaining(['extraindo_documentos', 'revisao_manual', 'callback_pendente']));
+  });
+});
 
 describe('cancelarOS', () => {
   beforeEach(() => {
