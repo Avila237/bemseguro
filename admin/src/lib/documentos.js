@@ -25,39 +25,73 @@ export async function listarDocumentos(osId) {
 }
 
 // Gera uma signed URL temporária (1h) para um arquivo do Storage privado.
-// O bucket é privado (só service_role lê direto) — o link assinado dá acesso
-// temporário sem expor o arquivo publicamente.
-export async function getSignedUrl(storagePath, bucket = BUCKET) {
+//
+// O bucket é PRIVADO e a anon key não o lê — chamar `createSignedUrl` direto do
+// browser falhava com "Object not found" (o Storage nega e não vaza existência).
+// A URL é gerada pela Edge Function `get-doc-url` (service_role no servidor),
+// mesmo padrão de `lookup-placa` / `extract-doc`: o segredo nunca vai pro bundle.
+//
+// O `bucket` é decidido pelo servidor (fixo em `documentos-clientes`) — não é
+// enviado pelo cliente (evita assinar bucket arbitrário com a service_role). O
+// 2º parâmetro é mantido só por compatibilidade com a chamada do DocCard.
+export async function getSignedUrl(storagePath, _bucket = BUCKET) {
   if (!storagePath) return null;
-  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(storagePath, 3600);
+  // TEMP (remover após validar em produção): confere o path enviado.
+  console.log('[signed-url] path:', storagePath);
+  const { data, error } = await supabase.functions.invoke('get-doc-url', {
+    body: { storage_path: storagePath },
+  });
   if (error) throw new Error(error.message || 'Falha ao gerar o link do documento');
   return (data && data.signedUrl) || null;
 }
 
-// Anexa um novo documento: lê o arquivo como base64 e chama a Edge Function
-// `extract-doc` (proxy server-side para o /extract/{cnh|crlv} do Railway). O
-// token do Railway NUNCA vai para o browser — mesmo padrão de `lookup-placa` /
-// `run-quote`. Devolve os dados extraídos pela IA ({ dados, confianca, ... }).
+// Anexa um novo documento: envia o arquivo binário (multipart/form-data) para a
+// Edge Function `extract-doc` (proxy server-side para o /extract/{cnh|crlv} do
+// Railway). O token do Railway NUNCA vai para o browser — mesmo padrão de
+// `lookup-placa` / `run-quote`. Devolve os dados extraídos pela IA
+// ({ success, tipo, documento_id, dados, confianca, ... }).
+//
+// IMPORTANTE: a `extract-doc` espera **multipart/form-data** com o `File`, então
+// NÃO dá pra usar `supabase.functions.invoke` (que serializa o body como JSON e
+// fazia a função responder "Esperado multipart/form-data"). Chamamos via `fetch`
+// direto, montando o `FormData` e passando o JWT da sessão no `Authorization`.
 export async function anexarDocumento(osId, tipo, file) {
-  const base64 = await fileParaBase64(file);
-  const { data, error } = await supabase.functions.invoke('extract-doc', {
-    body: { os_id: osId, tipo, base64, mimeType: file.type, filename: file.name },
-  });
-  if (error) throw new Error(error.message || 'Falha ao extrair o documento');
-  return data;
-}
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Não autenticado');
 
-function fileParaBase64(file) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onerror = () => reject(new Error('Falha ao ler o arquivo'));
-    r.onload = () => {
-      const s = String(r.result || '');
-      // Remove o prefixo "data:<mime>;base64," — fica só o conteúdo base64.
-      resolve(s.includes(',') ? s.slice(s.indexOf(',') + 1) : s);
-    };
-    r.readAsDataURL(file);
+  const form = new FormData();
+  form.append('os_id', osId);
+  form.append('tipo', tipo);
+  form.append('arquivo', file);
+
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-doc`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+      // NÃO setar Content-Type — o fetch define o multipart com boundary sozinho.
+    },
+    body: form,
   });
+
+  // 422 = documento de tipo incorreto (ex.: CRLV no slot de CNH). A IA detectou e
+  // a Edge Function já removeu o arquivo do Storage. Propaga erro estruturado para
+  // a UI mostrar um alerta claro (sem fechar o modal).
+  if (res.status === 422) {
+    const erro = await res.json().catch(() => ({}));
+    const e = new Error(erro.mensagem || erro.error || 'Documento de tipo incorreto');
+    e.tipoIncorreto = true;
+    e.tipoDetectado = erro.tipo_detectado;
+    e.tipoEsperado = erro.tipo_esperado;
+    throw e;
+  }
+
+  if (!res.ok) {
+    const erro = await res.json().catch(() => ({ error: 'Erro desconhecido' }));
+    throw new Error(erro.error || `HTTP ${res.status}`);
+  }
+  return res.json();
 }
 
 // Confiança de um campo específico extraído pela IA. Busca o documento do tipo

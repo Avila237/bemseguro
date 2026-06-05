@@ -1,9 +1,13 @@
-import { describe, test, expect, beforeEach, vi } from 'vitest';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Estado configurável do mock do Supabase.
 const h = vi.hoisted(() => ({
   docsResult: { data: [], error: null },
+  // Resposta da Edge Function `get-doc-url` (service_role gera a signed URL).
   signedResult: { data: { signedUrl: 'https://signed.example/doc' }, error: null },
+  invoke: null,
+  // Sessão Supabase Auth (JWT do painel) usada pelo anexarDocumento.
+  session: { access_token: 'jwt-abc' },
 }));
 
 vi.mock('../../lib/supabase.js', () => {
@@ -11,17 +15,21 @@ vi.mock('../../lib/supabase.js', () => {
   builder.select = vi.fn(() => builder);
   builder.eq = vi.fn(() => builder);
   builder.order = vi.fn(() => Promise.resolve(h.docsResult));
-  const createSignedUrl = vi.fn(() => Promise.resolve(h.signedResult));
+  // getSignedUrl agora chama a Edge Function `get-doc-url` (o bucket é privado;
+  // a anon key não gera signed URL direto). Outras invocações resolvem vazio.
+  h.invoke = vi.fn((name) => (name === 'get-doc-url'
+    ? Promise.resolve(h.signedResult)
+    : Promise.resolve({ data: null, error: null })));
   return {
     supabase: {
       from: vi.fn(() => builder),
-      storage: { from: vi.fn(() => ({ createSignedUrl })) },
-      functions: { invoke: vi.fn() },
+      functions: { invoke: h.invoke },
+      auth: { getSession: vi.fn(() => Promise.resolve({ data: { session: h.session } })) },
     },
   };
 });
 
-import { listarDocumentos, getSignedUrl, confiancaMedia, confiancaCampo } from '../documentos.js';
+import { listarDocumentos, getSignedUrl, anexarDocumento, confiancaMedia, confiancaCampo } from '../documentos.js';
 
 describe('listarDocumentos', () => {
   beforeEach(() => {
@@ -48,14 +56,123 @@ describe('listarDocumentos', () => {
 });
 
 describe('getSignedUrl', () => {
-  test('gera uma signed URL temporária', async () => {
+  beforeEach(() => {
     h.signedResult = { data: { signedUrl: 'https://signed.example/doc' }, error: null };
-    const url = await getSignedUrl('os-1/crlv-123.pdf');
-    expect(url).toBe('https://signed.example/doc');
+    if (h.invoke) h.invoke.mockClear();
   });
 
-  test('retorna null quando o path é vazio', async () => {
+  test('gera a signed URL via Edge Function get-doc-url (service_role)', async () => {
+    const url = await getSignedUrl('os-1/crlv-123.pdf');
+    expect(url).toBe('https://signed.example/doc');
+    // Vai pela Edge Function (não pelo Storage direto, que o anon não acessa).
+    expect(h.invoke).toHaveBeenCalledWith('get-doc-url', {
+      body: { storage_path: 'os-1/crlv-123.pdf' },
+    });
+  });
+
+  test('não envia bucket controlado pelo cliente (o servidor o fixa)', async () => {
+    await getSignedUrl('os-1/crlv-123.pdf', 'outro-bucket');
+    const [, opts] = h.invoke.mock.calls[0];
+    expect(opts.body).toEqual({ storage_path: 'os-1/crlv-123.pdf' });
+    expect(opts.body).not.toHaveProperty('bucket');
+  });
+
+  test('retorna null quando o path é vazio (sem chamar a Edge Function)', async () => {
     expect(await getSignedUrl('')).toBeNull();
+    expect(h.invoke).not.toHaveBeenCalled();
+  });
+
+  test('lança quando a Edge Function retorna erro', async () => {
+    h.signedResult = { data: null, error: { message: 'Documento não encontrado' } };
+    await expect(getSignedUrl('os-1/crlv-123.pdf')).rejects.toThrow(/não encontrado/i);
+  });
+});
+
+describe('anexarDocumento', () => {
+  beforeEach(() => {
+    h.session = { access_token: 'jwt-abc' };
+    // import.meta.env do Vite (mesmas vars usadas pelo client supabase.js).
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://proj.supabase.co');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-key-123');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  test('envia multipart/form-data (FormData) para a extract-doc com Authorization', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, tipo: 'cnh_condutor', dados: { nome: 'Marina' } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const file = new File(['conteudo'], 'cnh.jpg', { type: 'image/jpeg' });
+    const out = await anexarDocumento('os-9', 'cnh_condutor', file);
+
+    expect(out).toMatchObject({ success: true, dados: { nome: 'Marina' } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [url, opts] = fetchMock.mock.calls[0];
+    // Chama a Edge Function pelo endpoint /functions/v1/ do Supabase.
+    expect(url).toBe('https://proj.supabase.co/functions/v1/extract-doc');
+    expect(opts.method).toBe('POST');
+    // JWT da sessão + apikey anon; SEM Content-Type manual (boundary automático).
+    expect(opts.headers.Authorization).toBe('Bearer jwt-abc');
+    expect(opts.headers.apikey).toBe('anon-key-123');
+    expect(opts.headers['Content-Type']).toBeUndefined();
+    // Corpo é FormData com os campos esperados pela extract-doc.
+    expect(opts.body).toBeInstanceOf(FormData);
+    expect(opts.body.get('os_id')).toBe('os-9');
+    expect(opts.body.get('tipo')).toBe('cnh_condutor');
+    const enviado = opts.body.get('arquivo');
+    expect(enviado).toBeInstanceOf(File);
+    expect(enviado.name).toBe('cnh.jpg');
+  });
+
+  test('lança "Não autenticado" sem sessão (não chama fetch)', async () => {
+    h.session = null;
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const file = new File(['x'], 'cnh.jpg', { type: 'image/jpeg' });
+    await expect(anexarDocumento('os-9', 'cnh_condutor', file)).rejects.toThrow(/não autenticado/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('propaga o erro da Edge Function quando a resposta não é ok', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'Esperado multipart/form-data' }),
+    }));
+    const file = new File(['x'], 'cnh.jpg', { type: 'image/jpeg' });
+    await expect(anexarDocumento('os-9', 'cnh_condutor', file)).rejects.toThrow(/multipart/i);
+  });
+
+  test('422 (tipo incorreto) propaga erro estruturado com tipoIncorreto=true', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      json: async () => ({
+        error: 'Documento de tipo incorreto',
+        tipo_esperado: 'cnh',
+        tipo_detectado: 'crlv',
+        mensagem: 'Documento incorreto. Esperado: cnh, Detectado: crlv.',
+      }),
+    }));
+    const file = new File(['x'], 'doc.pdf', { type: 'application/pdf' });
+
+    let erro;
+    try {
+      await anexarDocumento('os-9', 'cnh_condutor', file);
+    } catch (e) {
+      erro = e;
+    }
+    expect(erro).toBeDefined();
+    expect(erro.tipoIncorreto).toBe(true);
+    expect(erro.tipoDetectado).toBe('crlv');
+    expect(erro.tipoEsperado).toBe('cnh');
+    expect(erro.message).toMatch(/incorreto/i);
   });
 });
 

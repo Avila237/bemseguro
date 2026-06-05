@@ -129,6 +129,20 @@ async function extrairDocumento({ tipoDocumento, base64Image, mimeType }) {
       .join('\n');
 
     const parsed = extrairJSON(texto);
+
+    // A IA detectou que o documento NAO e do tipo esperado (ex.: CRLV no slot de
+    // CNH). O prompt instrui a devolver { erro: 'tipo_incorreto', ... }. Propaga
+    // como erro com `code` para a rota traduzir em 422 + cleanup do Storage.
+    if (parsed && parsed.erro === 'tipo_incorreto') {
+      const err = new Error(
+        `Documento incorreto. Esperado: ${parsed.tipo_esperado}, Detectado: ${parsed.tipo_detectado}. ${parsed.descricao_documento || ''}`.trim(),
+      );
+      err.code = 'TIPO_INCORRETO';
+      err.tipoDetectado = parsed.tipo_detectado;
+      err.tipoEsperado = parsed.tipo_esperado;
+      throw err;
+    }
+
     const tokensUsados =
       ((resposta.usage && resposta.usage.input_tokens) || 0) +
       ((resposta.usage && resposta.usage.output_tokens) || 0);
@@ -143,6 +157,12 @@ async function extrairDocumento({ tipoDocumento, base64Image, mimeType }) {
       tokensUsados,
     };
   } catch (err) {
+    // Tipo incorreto e condicao esperada (documento errado anexado pelo operador),
+    // nao erro de infra — propaga sem ruido no Sentry.
+    if (err.code === 'TIPO_INCORRETO') {
+      log.warn(`tipo incorreto esperado=${err.tipoEsperado} detectado=${err.tipoDetectado}`);
+      throw err;
+    }
     log.error(`Falha na extracao tipo=${tipoDocumento}: ${err.message}`);
     Sentry.captureException(err, {
       tags: { component: 'anthropic', operation: 'extrair_documento' },

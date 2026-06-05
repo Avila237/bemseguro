@@ -118,6 +118,31 @@ describe('extrairDocumento — chamada a Claude API (fetch mockado)', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  test('IA detecta tipo incorreto -> lanca erro com code=TIPO_INCORRETO (sem retry)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        model: 'claude-sonnet-4-5',
+        content: [{ type: 'text', text: '{"erro":"tipo_incorreto","tipo_esperado":"cnh","tipo_detectado":"crlv","descricao_documento":"CRLV do veiculo"}' }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    });
+
+    let erro;
+    try {
+      await extrairDocumento({ tipoDocumento: 'cnh', base64Image: 'x', mimeType: 'image/jpeg' });
+    } catch (e) {
+      erro = e;
+    }
+    expect(erro).toBeDefined();
+    expect(erro.code).toBe('TIPO_INCORRETO');
+    expect(erro.tipoEsperado).toBe('cnh');
+    expect(erro.tipoDetectado).toBe('crlv');
+    expect(erro.message).toMatch(/crlv/i);
+    // Resposta veio ok da API → fetch chamado uma vez, sem retry.
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   test('erro permanente (HTTP 400) nao e retentado e propaga', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,

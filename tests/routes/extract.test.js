@@ -12,7 +12,9 @@ const mockSupabaseState = {
   osResult: { data: { id: 'os-1' }, error: null },     // os_cotacao.maybeSingle()
   uploadResult: { data: { path: 'p' }, error: null },  // storage.upload()
   insertResult: { data: { id: 'doc-1' }, error: null },// documentos_os insert.single()
+  removeResult: { data: [], error: null },             // storage.remove()
   uploadCalls: [],
+  removeCalls: [],
   insertedRow: null,
 };
 
@@ -35,6 +37,10 @@ jest.mock('../../src/services/supabase', () => {
           upload: jest.fn((path, buf, opts) => {
             state.uploadCalls.push({ bucket, path, opts, tamanho: buf && buf.length });
             return Promise.resolve(state.uploadResult);
+          }),
+          remove: jest.fn((paths) => {
+            state.removeCalls.push({ bucket, paths });
+            return Promise.resolve(state.removeResult);
           }),
         })),
       },
@@ -69,7 +75,9 @@ beforeEach(() => {
   mockSupabaseState.osResult = { data: { id: 'os-1' }, error: null };
   mockSupabaseState.uploadResult = { data: { path: 'p' }, error: null };
   mockSupabaseState.insertResult = { data: { id: 'doc-1' }, error: null };
+  mockSupabaseState.removeResult = { data: [], error: null };
   mockSupabaseState.uploadCalls = [];
+  mockSupabaseState.removeCalls = [];
   mockSupabaseState.insertedRow = null;
 });
 
@@ -263,6 +271,33 @@ describe('POST /extract/cnh — falhas de infraestrutura', () => {
     expect(res.status).toBe(502);
     expect(res.body.success).toBe(false);
     expect(mockSupabaseState.uploadCalls).toHaveLength(1);
+    expect(mockSupabaseState.insertedRow).toBeNull();
+  });
+});
+
+describe('POST /extract/cnh — documento de tipo incorreto', () => {
+  test('IA detecta tipo incorreto -> 422 e remove o arquivo do Storage (sem insert)', async () => {
+    extrairDocumento.mockRejectedValue(Object.assign(
+      new Error('Documento incorreto. Esperado: cnh, Detectado: crlv. Vi um CRLV.'),
+      { code: 'TIPO_INCORRETO', tipoDetectado: 'crlv', tipoEsperado: 'cnh' },
+    ));
+
+    const res = await request(makeApp())
+      .post('/extract/cnh')
+      .set('x-secret-token', TOKEN)
+      .field('os_id', 'os-1')
+      .attach('arquivo', Buffer.from('img'), { filename: 'doc.jpg', contentType: 'image/jpeg' });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatch(/incorreto/i);
+    expect(res.body.tipo_esperado).toBe('cnh');
+    expect(res.body.tipo_detectado).toBe('crlv');
+
+    // Upload aconteceu, mas o arquivo foi REMOVIDO e nada foi inserido.
+    expect(mockSupabaseState.uploadCalls).toHaveLength(1);
+    expect(mockSupabaseState.removeCalls).toHaveLength(1);
+    expect(mockSupabaseState.removeCalls[0].bucket).toBe('documentos-clientes');
+    expect(mockSupabaseState.removeCalls[0].paths[0]).toMatch(/^os-1\/cnh_segurado-\d+\.jpg$/);
     expect(mockSupabaseState.insertedRow).toBeNull();
   });
 });

@@ -158,6 +158,44 @@ describe('DetalheOS — estado revisao_manual', () => {
     expect(screen.getAllByText(/IA.+alta/).length).toBeGreaterThan(0);
   });
 
+  test('estado civil e sexo aparecem por extenso (select), persistindo o código', async () => {
+    renderDetalhe();
+    await screen.findByText('CNH do segurado');
+    // Estado civil: fixture tem o código 'casado' → select exibe "Casado(a)".
+    const ecivil = screen.getByRole('combobox', { name: 'Estado civil' });
+    expect(ecivil).toHaveValue('casado');
+    expect(ecivil).toHaveDisplayValue('Casado(a)');
+    // Sexo: código 'M' → "Masculino".
+    const sexo = screen.getByRole('combobox', { name: 'Sexo' });
+    expect(sexo).toHaveValue('M');
+    expect(sexo).toHaveDisplayValue('Masculino');
+  });
+
+  test('modal de anexar mostra alerta de documento de tipo incorreto e não fecha', async () => {
+    anexarDocumento.mockRejectedValueOnce(Object.assign(
+      new Error('Documento incorreto. Esperado: cnh, Detectado: crlv.'),
+      { tipoIncorreto: true, tipoDetectado: 'crlv', tipoEsperado: 'cnh' },
+    ));
+    renderDetalhe();
+    await screen.findByText('CNH do segurado');
+
+    // Abre o modal de anexar.
+    await userEvent.click(screen.getByRole('button', { name: /anexar novo documento/i }));
+    // Seleciona um arquivo (input file escondido).
+    const fileInput = document.querySelector('input[type="file"]');
+    const file = new File(['x'], 'crlv.pdf', { type: 'application/pdf' });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    // Dispara a extração.
+    await userEvent.click(screen.getByRole('button', { name: /anexar e extrair/i }));
+
+    // Alerta de tipo incorreto aparece (com os tipos por extenso).
+    expect(await screen.findByText(/documento incorreto detectado/i)).toBeInTheDocument();
+    expect(screen.getByText(/anexou um CRLV/i)).toBeInTheDocument();
+    expect(screen.getByText(/selecionou CNH/i)).toBeInTheDocument();
+    // Modal continua aberto (botão de extrair ainda presente).
+    expect(screen.getByRole('button', { name: /anexar e extrair/i })).toBeInTheDocument();
+  });
+
   test('abre o documento via signed URL em nova aba', async () => {
     renderDetalhe();
     await screen.findByText('CRLV');

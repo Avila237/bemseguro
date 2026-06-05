@@ -259,6 +259,14 @@ tudo em `documentos_os`. Fazem parte da feature de integração CRM + IA.
   3. **Extração por IA** — `extrairDocumento({ tipoDocumento, base64Image,
      mimeType })` (o `tipoDocumento` é o tipo-base `cnh`/`crlv`, que seleciona o
      prompt). Falha da IA → **502** (o arquivo já está no Storage).
+     - **Detecção de tipo incorreto:** o prompt manda a IA **verificar primeiro**
+       se o documento é do tipo esperado. Se não for (ex.: CRLV anexado no slot de
+       CNH), ela devolve `{ erro: 'tipo_incorreto', tipo_esperado, tipo_detectado,
+       descricao_documento }`. O wrapper transforma isso num erro com
+       `code:'TIPO_INCORRETO'` (sem Sentry — é condição esperada), e a rota
+       responde **422** (`{ error, tipo_esperado, tipo_detectado, mensagem }`) e
+       **remove o arquivo do Storage** (`storage.remove([storagePath])`) — **não**
+       insere em `documentos_os` nem deixa upload inválido órfão.
   4. **Insert em `documentos_os`** — `os_id`, `tipo`, `storage_path`,
      `storage_bucket`, `mime_type`, `tamanho_bytes`, `dados_extraidos` (= `dados`
      da IA), `confianca_extracao` (= **média** das confianças individuais, ou
@@ -294,15 +302,19 @@ tudo em `documentos_os`. Fazem parte da feature de integração CRM + IA.
   `{ dados, confianca, observacoes }` com **confiança 0–1 por campo**. CNH: nome,
   CPF, data de nascimento (ISO), sexo (M/F), validade. CRLV: placa, chassi, marca,
   modelo, ano fab./modelo, FIPE (se visível), RENAVAM, CPF/nome/endereço do
-  proprietário. Editar a extração = mexer **só** nesses `.md` (lidos e cacheados
-  em runtime; não precisam de rebuild).
+  proprietário. Cada prompt começa com um **guard de tipo**: a IA verifica se o
+  documento é mesmo do tipo esperado e, se não for, devolve só
+  `{ erro:'tipo_incorreto', ... }` (ver passo 3 acima). Editar a extração = mexer
+  **só** nesses `.md` (lidos e cacheados em runtime; não precisam de rebuild).
 - **Testes:** `tests/routes/extract.test.js` (supertest, com **Supabase mockado**
-  — Storage `upload` + tabela `insert`: 401 sem token, 400 sem arquivo/sem
+  — Storage `upload`/`remove` + tabela `insert`: 401 sem token, 400 sem arquivo/sem
   `os_id`/`tipo` inválido, 404 OS inexistente, 400 MIME inválido, 413 grande
   demais, 200 com upload+IA+insert e `documento_id`, média de confiança, 500 em
-  falha de upload, 500 + warning em falha de insert, 502 em falha de IA, PDF/CRLV)
-  e `tests/services/anthropic.test.js` (parse robusto, montagem da requisição,
-  bloco image vs document, sem API key, 4xx não retentado).
+  falha de upload, 500 + warning em falha de insert, 502 em falha de IA,
+  **422 + remoção do arquivo em tipo incorreto**, PDF/CRLV) e
+  `tests/services/anthropic.test.js` (parse robusto, montagem da requisição, bloco
+  image vs document, sem API key, 4xx não retentado, **tipo incorreto →
+  `TIPO_INCORRETO`**).
 
 ### Cotação com documentos — `/api/v1/cotacoes-com-docs`
 
@@ -633,7 +645,10 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
       >85, azul >75, âmbar <75) e campos com problema **destacados em laranja**;
       **trilho de documentos** à direita (de `documentos_os`) com confiança, botão
       **Ver** (signed URL 1h), estado "Não enviado pelo CRM" e **Anexar novo
-      documento** (modal → upload → extração IA → preenche os campos); card
+      documento** (modal → upload → extração IA → preenche os campos; se a IA
+      detectar **documento de tipo incorreto** — 422 — o modal mostra um alerta
+      claro "anexou um X, mas selecionou Y", **sem fechar** nem limpar os campos,
+      para o operador corrigir); card
       **Confiança média**; rodapé com "N campos alterados", "N pendências",
       **Cancelar OS** e **Disparar cotação** (habilita só sem pendências críticas →
       `dispararCotacaoAposRevisao`, recarrega e a OS entra em `cotando`).
@@ -643,6 +658,11 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
       seu `iaKey` (chave da IA) + `doc` (tipo). Fallback para a média do documento
       em docs antigos sem `confianca_por_campo`; campos vindos do formulário
       (estado civil, CEP) não têm badge.
+      **Estado civil e sexo são `<select>`** (não texto livre): exibem o rótulo
+      **por extenso** (`Casado(a)`, `Masculino`) e **persistem o código** que o
+      backend reconhece (slug `casado` / letra `M`), via `admin/src/lib/enums.js`
+      (`ESTADO_CIVIL_MAP` / `SEXO_MAP`). Valor fora do padrão (vindo do CRM) entra
+      como opção crua, sem se perder.
   - `NovaCotacao.jsx` — Tela 05 (criação manual de OS). 4 seções: Cliente/Lead
     (toggle Novo/Existente — Existente é placeholder), Dados da OS (tipo só Auto
     ativo; Residencial/Empresarial desabilitados; prioridade; observações),
@@ -830,13 +850,23 @@ Em `admin/src/lib/detalhe.js`:
 
 - `listarDocumentos(osId)` — `documentos_os select(...) eq os_id order created_at`
   (inclui `dados_extraidos`, `confianca_extracao` e `confianca_por_campo`).
-- `getSignedUrl(storagePath, bucket?)` — `supabase.storage.from('documentos-clientes')
-  .createSignedUrl(path, 3600)` → link temporário de **1h** (bucket é privado).
-- `anexarDocumento(osId, tipo, file)` — lê o arquivo como base64 e chama a Edge
-  Function **`extract-doc`** (`supabase.functions.invoke`), um **proxy
-  server-side** (`edge-functions/extract-doc.ts`, multipart) para o
-  `/extract/{cnh|crlv}` do Railway — o secret do Railway **não** vai pro browser
-  (mesmo padrão de `lookup-placa`/`run-quote`). Deploy da função é manual.
+- `getSignedUrl(storagePath, bucket?)` — link temporário de **1h** via Edge
+  Function **`get-doc-url`** (`supabase.functions.invoke`). **Não** chama o Storage
+  direto: o bucket é privado e a anon key não o lê → `createSignedUrl` no browser
+  falhava com **"Object not found"**. A função gera a URL com a `service_role` no
+  servidor (ver Edge Function abaixo). Deploy manual.
+- `anexarDocumento(osId, tipo, file)` — envia o arquivo **binário** em
+  **`multipart/form-data`** (`FormData` com `os_id`/`tipo`/`arquivo`) para a Edge
+  Function **`extract-doc`** (`edge-functions/extract-doc.ts`), um **proxy
+  server-side** para o `/extract/{cnh|crlv}` do Railway — o secret do Railway
+  **não** vai pro browser (mesmo padrão de `lookup-placa`/`run-quote`). Chamada via
+  **`fetch` direto** para `${VITE_SUPABASE_URL}/functions/v1/extract-doc` com
+  `Authorization: Bearer <JWT da sessão>` + `apikey` (anon) — **não** dá pra usar
+  `supabase.functions.invoke`, que serializa o body como **JSON** e fazia a função
+  responder `"Esperado multipart/form-data"`. **Tipo incorreto:** se a Edge
+  Function responder **422**, propaga um erro estruturado
+  (`e.tipoIncorreto = true`, `e.tipoDetectado`, `e.tipoEsperado`) para a UI mostrar
+  o alerta. Deploy da função é manual.
 - `confiancaMedia(documentos)` — média de `confianca_extracao` (fração 0–1) ou `null`.
 - `confiancaCampo(documentos, tipoDoc, campo)` — confiança de **um campo**
   (`confianca_por_campo[campo]` do documento daquele tipo; ex.: CPF na CNH do
@@ -859,6 +889,41 @@ secret do Railway e o bucket é privado (só `service_role`) — o anexo **não 
 ir direto do browser. CRLV → `/extract/crlv`; CNH (segurado/condutor) →
 `/extract/cnh` (encaminha o `tipo`). CORS liberado para o browser. **Deploy
 manual** no Supabase (env: `RAILWAY_URL`, `RAILWAY_SECRET_TOKEN`).
+
+**Edge Function `get-doc-url`** (`edge-functions/get-doc-url.ts`, Deno) — gera a
+**signed URL** de um documento do bucket **privado** `documentos-clientes`, usada
+pelo `getSignedUrl` (botão **Ver** na revisão). Recebe `POST { storage_path,
+expires_in? }` com o **JWT** do painel (`Authorization Bearer`). É necessária
+porque o bucket é privado e a anon key **não** o lê — chamar `createSignedUrl`
+direto do browser retornava **"Object not found"** (o Storage nega sem vazar
+existência). Sem JWT → **401**; path inválido/ausente → **400**; documento
+inexistente → **404**. CORS liberado. **Deploy manual** no Supabase (env:
+`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` — todas
+injetadas automaticamente pelo runtime de Edge Functions).
+
+> **Hardening de segurança** (os documentos são PII — CNH/CRLV; achado de revisão
+> automática de IDOR): **(1)** o `bucket` é **fixo no servidor** — qualquer
+> `bucket` vindo do cliente é ignorado (não deixar assinar bucket arbitrário com a
+> service_role); o `getSignedUrl` do painel nem o envia mais. **(2)** `storage_path`
+> é validado por **regex estrita** (`uuid/arquivo.ext`) — anti-probing/traversal.
+> **(3) Autorização anti-IDOR:** antes de assinar, a função confirma que o
+> `storage_path` corresponde a uma row de `documentos_os` consultada **sob a RLS do
+> usuário** (cliente com o JWT do painel + `SUPABASE_ANON_KEY`), e só então assina
+> com a `service_role`. No piloto a RLS é `using(true)` (todo operador vê todas as
+> OS), mas a checagem garante que só se assina caminho de documento de fato
+> registrado e passa a respeitar qualquer policy por-usuário futura
+> automaticamente.
+
+> **Enums do domínio** (`admin/src/lib/enums.js`) — `ESTADO_CIVIL_MAP` /
+> `SEXO_MAP` + helpers `estadoCivilLabel` / `sexoLabel` mapeiam **código → rótulo
+> por extenso**. Os "códigos" são os que o **backend** reconhece (conferidos em
+> `src/utils/parsers.js`): estado civil é **slug** (`solteiro=1, casado=2,
+> divorciado=3, viuvo=4` no `parseEstadoCivil`) e sexo é `M`/`F` — é isso que fica
+> em `dados_risco.segurado`, **não** número (usar `'1'..'7'` quebraria o
+> `parseEstadoCivil`, que cairia no default `casado`). Os selects da revisão
+> exibem por extenso e persistem o código. ⚠️ O painel (NovaCotacao) ainda oferece
+> "União Estável" (`uniao_estavel`), que o `parseEstadoCivil` **não** mapeia
+> (vira `casado`) — gap pré-existente do backend, fora do escopo desta tarefa.
 
 ### Nova Cotação — lookup de placa e payload (Tela 05)
 

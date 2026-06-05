@@ -5,6 +5,21 @@ import { Icon } from '../components/Icons.jsx';
 import { numeroOS, dataHora } from '../lib/format.js';
 import { listarDocumentos, getSignedUrl, anexarDocumento, confiancaMedia, confiancaCampo, TIPO_LABEL, TIPOS_DOC } from '../lib/documentos.js';
 import { dispararCotacaoAposRevisao } from '../lib/ordens.js';
+import { ESTADO_CIVIL_MAP, SEXO_MAP } from '../lib/enums.js';
+
+// Opções dos selects: exibe por extenso, persiste o código (slug/letra) que o
+// backend reconhece (ver lib/enums.js — parseEstadoCivil / parseSexo).
+const ECIVIL_OPTS = Object.entries(ESTADO_CIVIL_MAP).map(([value, label]) => ({ value, label }));
+const SEXO_OPTS = Object.entries(SEXO_MAP).map(([value, label]) => ({ value, label }));
+
+// Garante que o valor atual apareça no select: vazio → "Selecione…"; valor fora
+// do padrão (ex.: vindo do CRM) entra como opção crua p/ não se perder/alterar.
+function optionsComValor(base, value) {
+  const v = value == null ? '' : String(value);
+  if (!v) return [{ value: '', label: 'Selecione…' }, ...base];
+  if (!base.some(o => o.value === v)) return [{ value: v, label: v }, ...base];
+  return base;
+}
 
 // ── Confiança (limiares do briefing: >85 alta/verde · >75 média/azul · <75 revisar/âmbar) ──
 function confNivel(pct) { return pct > 85 ? 'alta' : pct > 75 ? 'media' : 'revisar'; }
@@ -28,7 +43,7 @@ const CONDUTOR_DEFS = [
   { key: 'cNome', label: 'Nome completo', doc: 'cnh_condutor', iaKey: 'nome' },
   { key: 'cCpf', label: 'CPF', doc: 'cnh_condutor', mono: true, iaKey: 'cpf' },
   { key: 'cNasc', label: 'Data de nascimento', doc: 'cnh_condutor', mono: true, iaKey: 'data_nascimento' },
-  { key: 'cSexo', label: 'Sexo', doc: 'cnh_condutor', iaKey: 'sexo' },
+  { key: 'cSexo', label: 'Sexo', doc: 'cnh_condutor', iaKey: 'sexo', options: SEXO_OPTS },
 ];
 
 // Anel de confiança (SVG).
@@ -61,6 +76,8 @@ function ConfChip({ v }) {
 }
 
 // Campo editável com badge de confiança + destaque de problema (laranja).
+// Campos com `f.options` viram <select> (estado civil, sexo): exibem o rótulo por
+// extenso e persistem o código.
 function RevField({ f, value, conf, problema, onChange }) {
   const accent = problema ? 'var(--brand)' : null;
   const wrap = accent ? {
@@ -69,19 +86,32 @@ function RevField({ f, value, conf, problema, onChange }) {
     borderLeft: '3px solid ' + accent,
     borderRadius: 'var(--r-sm)', padding: '7px 9px 8px',
   } : { padding: '1px 0' };
+  const accentBorder = accent ? { borderColor: 'color-mix(in oklch, ' + accent + ' 55%, var(--border-strong))' } : {};
   return (
     <div className="field" data-field={f.key} style={{ gap: 5, scrollMarginTop: 90, ...wrap }}>
       <div className="row between center" style={{ gap: 8 }}>
         <label className="label" style={{ fontSize: 12 }}>{f.label}</label>
         <ConfChip v={conf} />
       </div>
-      <input
-        className={'input' + (f.mono ? ' mono' : '')}
-        value={value ?? ''}
-        aria-label={f.label}
-        onChange={e => onChange(e.target.value)}
-        style={{ height: 34, ...(accent ? { borderColor: 'color-mix(in oklch, ' + accent + ' 55%, var(--border-strong))' } : {}) }}
-      />
+      {f.options ? (
+        <select
+          className="select"
+          value={value ?? ''}
+          aria-label={f.label}
+          onChange={e => onChange(e.target.value)}
+          style={{ height: 34, ...accentBorder }}
+        >
+          {optionsComValor(f.options, value).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      ) : (
+        <input
+          className={'input' + (f.mono ? ' mono' : '')}
+          value={value ?? ''}
+          aria-label={f.label}
+          onChange={e => onChange(e.target.value)}
+          style={{ height: 34, ...accentBorder }}
+        />
+      )}
       {problema && (
         <span className="row center gap-5" style={{ fontSize: 11.5, color: 'var(--brand-text)', fontWeight: 500 }}>
           <Icon.alert width={12} height={12} style={{ flex: 'none' }} />{problema}
@@ -149,16 +179,21 @@ function DocCard({ tipo, doc }) {
   );
 }
 
+// Rótulo do tipo-base de documento que a IA reporta na detecção de tipo incorreto.
+const TIPO_BASE_LABEL = { cnh: 'CNH', crlv: 'CRLV', rg: 'RG', outro: 'outro documento' };
+const tipoBaseLbl = (t) => TIPO_BASE_LABEL[t] || t || 'documento';
+
 // Modal de anexar documento (upload → extração da IA).
 function UploadModal({ open, onClose, tipoFaltando, onExtraido }) {
   const [tipo, setTipo] = useState(tipoFaltando || 'cnh_condutor');
   const [file, setFile] = useState(null);
   const [erro, setErro] = useState('');
+  const [tipoErro, setTipoErro] = useState(null); // { detectado, esperado } — documento de tipo incorreto
   const [fase, setFase] = useState('idle'); // idle | extraindo | erro
   const inputRef = useRef(null);
 
   useEffect(() => {
-    if (open) { setTipo(tipoFaltando || 'cnh_condutor'); setFile(null); setErro(''); setFase('idle'); }
+    if (open) { setTipo(tipoFaltando || 'cnh_condutor'); setFile(null); setErro(''); setTipoErro(null); setFase('idle'); }
   }, [open, tipoFaltando]);
 
   const TIPOS_OK = /\.(jpe?g|png|pdf)$/i;
@@ -166,20 +201,27 @@ function UploadModal({ open, onClose, tipoFaltando, onExtraido }) {
   function escolher(e) {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
+    // Novo arquivo escolhido → limpa erros anteriores (inclusive o de tipo incorreto).
+    setErro(''); setTipoErro(null);
     if (!TIPOS_OK.test(f.name)) { setErro('Formato não suportado. Aceitos: JPG, PNG ou PDF.'); setFile(null); return; }
     if (f.size > 10 * 1024 * 1024) { setErro('Arquivo acima de 10 MB. Reduza a resolução e tente de novo.'); setFile(null); return; }
-    setErro('');
     setFile(f);
   }
 
   async function confirmar() {
     if (!file) { setErro('Selecione um arquivo.'); return; }
-    setFase('extraindo'); setErro('');
+    setFase('extraindo'); setErro(''); setTipoErro(null);
     try {
       await onExtraido(tipo, file);
       onClose();
     } catch (e) {
-      setErro(e.message || 'Falha na extração.');
+      // Documento de tipo incorreto: alerta dedicado, NÃO fecha o modal nem limpa
+      // os campos — o operador corrige (anexa o documento certo) e tenta de novo.
+      if (e && e.tipoIncorreto) {
+        setTipoErro({ detectado: e.tipoDetectado, esperado: e.tipoEsperado });
+      } else {
+        setErro(e.message || 'Falha na extração.');
+      }
       setFase('idle');
     }
   }
@@ -226,6 +268,14 @@ function UploadModal({ open, onClose, tipoFaltando, onExtraido }) {
             <Icon.sparkle className="spin" width={16} height={16} />Extraindo dados com a IA…
           </div>
         )}
+        {tipoErro && (
+          <div className="row center gap-10" role="alert" style={{ padding: '12px 14px', borderRadius: 'var(--r-md)', background: 'var(--red-tint)', border: '1.5px solid color-mix(in oklch, var(--red) 45%, transparent)' }}>
+            <Icon.alert width={20} height={20} style={{ color: 'var(--red)', flex: 'none' }} />
+            <span className="fz13" style={{ color: 'var(--st-erro-fg)', fontWeight: 500 }}>
+              {`⚠️ Documento incorreto detectado. Você anexou um ${tipoBaseLbl(tipoErro.detectado)}, mas selecionou ${tipoBaseLbl(tipoErro.esperado)}. Verifique e tente novamente.`}
+            </span>
+          </div>
+        )}
         {erro && (
           <div className="row center gap-8" style={{ padding: '10px 12px', borderRadius: 'var(--r-sm)', background: 'var(--red-tint)', border: '1px solid color-mix(in oklch, var(--red) 26%, transparent)' }}>
             <Icon.alert width={16} height={16} style={{ color: 'var(--red)', flex: 'none' }} />
@@ -248,8 +298,8 @@ function construirCampos(os) {
     { key: 'nome', label: 'Nome completo', doc: 'cnh_segurado', iaKey: 'nome', value: seg.nome ?? os.nome ?? '' },
     { key: 'cpf', label: 'CPF', doc: 'cnh_segurado', iaKey: 'cpf', mono: true, value: seg.cpf ?? os.cpf ?? '' },
     { key: 'nascimento', label: 'Data de nascimento', doc: 'cnh_segurado', iaKey: 'data_nascimento', mono: true, value: seg.dataNascimento ?? seg.data_nascimento ?? '' },
-    { key: 'sexo', label: 'Sexo', doc: 'cnh_segurado', iaKey: 'sexo', value: seg.sexo ?? '' },
-    { key: 'estadoCivil', label: 'Estado civil', doc: null, value: seg.estadoCivil ?? seg.estado_civil ?? dr.estado_civil ?? '' },
+    { key: 'sexo', label: 'Sexo', doc: 'cnh_segurado', iaKey: 'sexo', options: SEXO_OPTS, value: seg.sexo ?? '' },
+    { key: 'estadoCivil', label: 'Estado civil', doc: null, options: ECIVIL_OPTS, value: seg.estadoCivil ?? seg.estado_civil ?? dr.estado_civil ?? '' },
     { key: 'cep', label: 'CEP de pernoite', doc: null, mono: true, value: seg.cep ?? os.cep ?? '' },
     { key: 'validadeCnh', label: 'Validade da CNH', doc: 'cnh_segurado', iaKey: 'validade_cnh', mono: true, value: seg.validade_cnh ?? '' },
   ];

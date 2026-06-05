@@ -129,6 +129,23 @@ function criarHandler(docBase) {
       const base64Image = buffer.toString('base64');
       extracao = await extrairDocumento({ tipoDocumento: docBase, base64Image, mimeType: mimetype });
     } catch (err) {
+      // Documento de tipo incorreto (ex.: CRLV anexado no slot de CNH): a IA
+      // detecta e o wrapper lanca TIPO_INCORRETO. NAO insere em documentos_os e
+      // REMOVE o arquivo que acabou de subir (nao deixa upload invalido orfao).
+      if (err.code === 'TIPO_INCORRETO') {
+        try {
+          await supabase.storage.from(BUCKET).remove([storagePath]);
+        } catch (rmErr) {
+          log.warn(`Falha ao remover arquivo de tipo incorreto (${BUCKET}/${storagePath}): ${rmErr.message}`);
+        }
+        log.info(`tipo incorreto esperado=${err.tipoEsperado} detectado=${err.tipoDetectado} os=${os_id} (arquivo removido)`);
+        return res.status(422).json({
+          error: 'Documento de tipo incorreto',
+          tipo_esperado: err.tipoEsperado,
+          tipo_detectado: err.tipoDetectado,
+          mensagem: err.message,
+        });
+      }
       // O anthropic.js ja capturou no Sentry; o arquivo segue no Storage.
       log.error(`Extracao falhou tipo=${tipo}: ${err.message}`);
       return res.status(502).json({ success: false, error: 'Falha ao extrair dados do documento' });
