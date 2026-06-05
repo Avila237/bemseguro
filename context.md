@@ -202,6 +202,8 @@ integração CRM + IA** (mesma da migração 005). O arquivo binário fica no
 | revisado           | boolean                 | default `false`                                  |
 | revisado_por       | uuid FK → auth.users    | Quem revisou (nullable até a revisão)            |
 | revisado_em        | timestamptz nullable    |                                                  |
+| removido_em        | timestamptz nullable    | **Soft delete** — null = ativo (migração 009)    |
+| removido_por       | uuid FK → auth.users    | Quem removeu (migração 009)                       |
 | created_at         | timestamptz             | default `now()`                                  |
 | updated_at         | timestamptz             | default `now()`, mantido por trigger             |
 
@@ -212,6 +214,14 @@ migração 006). A escrita do **arquivo** no Storage é exclusiva do `service_ro
 > A migração 006 também declara `update_updated_at_column()` via
 > `create or replace` (o schema inicial não está versionado no repo, então não se
 > pode assumir que a função já existe) e cria o trigger `documentos_os_updated_at`.
+
+**Soft delete (migração 009):** remover um documento na revisão manual **não**
+apaga a row nem o arquivo no Storage — marca `removido_em = now()` e
+`removido_por = <user.id>`. O **arquivo é preservado** no bucket para auditoria.
+As leituras "ativas" filtram `removido_em IS NULL` (índice parcial
+`idx_documentos_os_ativos`); o painel mostra um **histórico** dos removidos
+(read-only). A remoção passa pela Edge Function **`remover-doc`** (service_role) e
+é registrada em `audit_log` (`endpoint='/edge/remover-doc'`, `auth='painel'`).
 
 ### Storage — bucket `documentos-clientes`
 Bucket **privado** (sem acesso público) para os arquivos de CNH/CRLV. Todo acesso
@@ -644,7 +654,11 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
       cada campo com **badge de confiança da IA** ("IA · alta/média/revisar" — verde
       >85, azul >75, âmbar <75) e campos com problema **destacados em laranja**;
       **trilho de documentos** à direita (de `documentos_os`) com confiança, botão
-      **Ver** (signed URL 1h), estado "Não enviado pelo CRM" e **Anexar novo
+      **Ver** (signed URL 1h), botão **Remover** (lixeira — em **todos** os docs,
+      inclusive os do CRM → modal de confirmação "arquivo é preservado" →
+      `removerDocumento`/soft delete → limpa o bloco correspondente, recalcula as
+      validações cruzadas e **reabre o anexar** com o tipo pré-selecionado), estado
+      "Não enviado pelo CRM" e **Anexar novo
       documento** (modal → upload → extração IA → preenche **apenas o bloco
       correspondente** ao **tipo retornado pela Edge Function** — `cnh_segurado`→
       Segurado, `cnh_condutor`→Condutor, `crlv`→Veículo —, via `camposExtraidos`;
@@ -652,7 +666,9 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
       **documento de tipo incorreto** — 422 — o modal mostra um alerta
       claro "anexou um X, mas selecionou Y", **sem fechar** nem limpar os campos,
       para o operador corrigir); card
-      **Confiança média**; rodapé com "N campos alterados", "N pendências",
+      **Confiança média**; collapse **"Histórico de documentos removidos"**
+      (read-only, via `listarHistoricoDocumentos` — tipo, arquivo e "Removido em
+      {data}"); rodapé com "N campos alterados", "N pendências",
       **Cancelar OS** e **Disparar cotação** (habilita só sem pendências críticas →
       `dispararCotacaoAposRevisao`, recarrega e a OS entra em `cotando`).
       **Confiança por campo:** o badge de cada campo usa
@@ -860,8 +876,14 @@ Em `admin/src/lib/detalhe.js`:
 
 **Revisão manual — `admin/src/lib/documentos.js`** (helpers do workspace de revisão):
 
-- `listarDocumentos(osId)` — `documentos_os select(...) eq os_id order created_at`
-  (inclui `dados_extraidos`, `confianca_extracao` e `confianca_por_campo`).
+- `listarDocumentos(osId)` — `documentos_os select(...) eq os_id` **`.is('removido_em',
+  null)`** `order created_at` (só **ativos**; inclui `dados_extraidos`,
+  `confianca_extracao` e `confianca_por_campo`).
+- `removerDocumento(documentoId)` — **soft delete** via Edge Function
+  **`remover-doc`** (`supabase.functions.invoke`); o arquivo no Storage é
+  preservado. Devolve `{ success: true }`.
+- `listarHistoricoDocumentos(osId)` — histórico **completo** (ativos + removidos,
+  inclui `removido_em`) para o collapse "Histórico de documentos removidos".
 - `getSignedUrl(storagePath, bucket?)` — link temporário de **1h** via Edge
   Function **`get-doc-url`** (`supabase.functions.invoke`). **Não** chama o Storage
   direto: o bucket é privado e a anon key não o lê → `createSignedUrl` no browser
@@ -925,6 +947,20 @@ injetadas automaticamente pelo runtime de Edge Functions).
 > OS), mas a checagem garante que só se assina caminho de documento de fato
 > registrado e passa a respeitar qualquer policy por-usuário futura
 > automaticamente.
+
+**Edge Function `remover-doc`** (`edge-functions/remover-doc.ts`, Deno) — **soft
+delete** de um documento da revisão manual. Recebe `POST { documento_id }` com o
+**JWT** do painel; resolve o `user.id` (cliente com o JWT) e, com a
+**`service_role`**, marca `removido_em = now()` + `removido_por = user.id`
+(`.is('removido_em', null)` — idempotente; já removido → `success` sem novo
+audit; inexistente → **404**). **Autorização anti-IDOR** (mesmo padrão da
+`get-doc-url`): antes de mutar, confirma que o documento está **visível para o
+usuário sob a RLS** (cliente com o JWT) — só então remove com a service_role.
+**Não apaga o arquivo do Storage** (preservado p/ auditoria). Registra em `audit_log` (`endpoint='/edge/remover-doc'`,
+`request_payload={ documento_id, auth:'painel' }`). Sem JWT → **401**; sem
+`documento_id` → **400**. CORS liberado. **Deploy manual** no Supabase (envs
+`SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` auto-injetadas).
+Migração necessária: `db/migrations/009-soft-delete-documentos.sql`.
 
 > **Enums do domínio** (`admin/src/lib/enums.js`) — `ESTADO_CIVIL_MAP` /
 > `SEXO_MAP` + helpers `estadoCivilLabel` / `sexoLabel` mapeiam **código → rótulo

@@ -12,15 +12,41 @@ export const TIPO_LABEL = {
 // Tipos esperados de uma OS (ordem de exibição no trilho de documentos).
 export const TIPOS_DOC = ['cnh_segurado', 'crlv', 'cnh_condutor'];
 
-// Lista os documentos de uma OS (documentos_os filtrado por os_id, mais antigo
-// primeiro). Inclui dados_extraidos + confianca_extracao para alimentar a tela.
+// Lista os documentos ATIVOS de uma OS (documentos_os filtrado por os_id, mais
+// antigo primeiro, `removido_em IS NULL`). Inclui dados_extraidos +
+// confianca_extracao para alimentar a tela. Documentos com soft delete não
+// aparecem aqui (ver listarHistoricoDocumentos para o histórico completo).
 export async function listarDocumentos(osId) {
   const { data, error } = await supabase
     .from('documentos_os')
     .select('id, tipo, storage_path, storage_bucket, mime_type, tamanho_bytes, dados_extraidos, confianca_extracao, confianca_por_campo, created_at')
     .eq('os_id', osId)
+    .is('removido_em', null)
     .order('created_at', { ascending: true });
   if (error) throw new Error(error.message || 'Falha ao carregar os documentos');
+  return data || [];
+}
+
+// Soft delete de um documento via Edge Function `remover-doc` (service_role no
+// servidor marca removido_em/removido_por e registra em audit_log). O arquivo no
+// Storage é PRESERVADO para auditoria. Devolve { success: true }.
+export async function removerDocumento(documentoId) {
+  const { data, error } = await supabase.functions.invoke('remover-doc', {
+    body: { documento_id: documentoId },
+  });
+  if (error) throw new Error(error.message || 'Falha ao remover o documento');
+  return data;
+}
+
+// Histórico COMPLETO de documentos de uma OS (ativos + removidos), para o collapse
+// "Histórico de documentos removidos". Inclui `removido_em` (null = ativo).
+export async function listarHistoricoDocumentos(osId) {
+  const { data, error } = await supabase
+    .from('documentos_os')
+    .select('id, tipo, storage_path, confianca_extracao, created_at, removido_em')
+    .eq('os_id', osId)
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(error.message || 'Falha ao carregar o histórico de documentos');
   return data || [];
 }
 

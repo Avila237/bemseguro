@@ -3,7 +3,7 @@ import Page from '../components/Page.jsx';
 import { Card, Modal, StatusBadge, Skeleton } from '../components/Ui.jsx';
 import { Icon } from '../components/Icons.jsx';
 import { numeroOS, dataHora } from '../lib/format.js';
-import { listarDocumentos, getSignedUrl, anexarDocumento, confiancaMedia, confiancaCampo, TIPO_LABEL, TIPOS_DOC } from '../lib/documentos.js';
+import { listarDocumentos, listarHistoricoDocumentos, getSignedUrl, anexarDocumento, removerDocumento, confiancaMedia, confiancaCampo, TIPO_LABEL, TIPOS_DOC } from '../lib/documentos.js';
 import { dispararCotacaoAposRevisao } from '../lib/ordens.js';
 import { ESTADO_CIVIL_MAP, SEXO_MAP } from '../lib/enums.js';
 
@@ -122,7 +122,7 @@ function RevField({ f, value, conf, problema, onChange }) {
 }
 
 // Cartão de documento no trilho (ou estado "não enviado").
-function DocCard({ tipo, doc }) {
+function DocCard({ tipo, doc, onRemover }) {
   const [abrindo, setAbrindo] = useState(false);
   const label = TIPO_LABEL[tipo] || tipo;
 
@@ -172,9 +172,15 @@ function DocCard({ tipo, doc }) {
         )}
       </div>
       {pct != null && <ConfRing v={pct} size={38} />}
-      <button className="btn btn-secondary btn-sm" onClick={ver} disabled={abrindo} style={{ flex: 'none' }}>
-        <Icon.eye /> Ver <Icon.external />
-      </button>
+      <div className="row center gap-6" style={{ flex: 'none' }}>
+        <button className="btn btn-secondary btn-sm" onClick={ver} disabled={abrindo}>
+          <Icon.eye /> Ver <Icon.external />
+        </button>
+        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => onRemover && onRemover(doc)}
+          title="Remover documento" aria-label="Remover documento" style={{ color: 'var(--red)' }}>
+          <Icon.trash width={15} height={15} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -325,6 +331,14 @@ function valoresIniciais(campos) {
   return v;
 }
 
+// Chaves de campo (da tela) que pertencem a cada bloco/documento — usado para
+// LIMPAR o bloco correspondente ao remover um documento. Espelha camposExtraidos.
+const CAMPOS_POR_TIPO = {
+  cnh_segurado: ['nome', 'cpf', 'nascimento', 'sexo', 'validadeCnh'],
+  crlv: ['placa', 'chassi', 'marca', 'modelo', 'anoFab', 'anoMod', 'fipe'],
+  cnh_condutor: ['cNome', 'cCpf', 'cNasc', 'cSexo'],
+};
+
 // Mapeia um campo extraído (chaves da IA) para as chaves de campo da tela.
 function camposExtraidos(tipo, dados) {
   dados = dados || {};
@@ -437,8 +451,14 @@ export default function DetalheRevisao({ os, navigate, onCancelar, cancelando, r
   const [docs, setDocs] = useState([]);
   const [docsLoading, setDocsLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [tipoAnexar, setTipoAnexar] = useState(null); // tipo pré-selecionado ao reabrir o anexo
   const [enviando, setEnviando] = useState(false);
   const [erroDisparo, setErroDisparo] = useState('');
+  const [historico, setHistorico] = useState([]);
+  const [histAberto, setHistAberto] = useState(false);
+  const [docRemover, setDocRemover] = useState(null); // documento aguardando confirmação de remoção
+  const [removendo, setRemovendo] = useState(false);
+  const [erroRemocao, setErroRemocao] = useState('');
 
   async function carregarDocs() {
     setDocsLoading(true);
@@ -450,7 +470,16 @@ export default function DetalheRevisao({ os, navigate, onCancelar, cancelando, r
       setDocsLoading(false);
     }
   }
-  useEffect(() => { carregarDocs(); /* eslint-disable-next-line */ }, [os.id]);
+  async function carregarHistorico() {
+    try {
+      setHistorico(await listarHistoricoDocumentos(os.id));
+    } catch (e) {
+      setHistorico([]);
+    }
+  }
+  useEffect(() => { carregarDocs(); carregarHistorico(); /* eslint-disable-next-line */ }, [os.id]);
+
+  const removidos = useMemo(() => (historico || []).filter(d => d.removido_em), [historico]);
 
   const docsByTipo = useMemo(() => {
     const m = {};
@@ -521,6 +550,35 @@ export default function DetalheRevisao({ os, navigate, onCancelar, cancelando, r
       setFields(s => ({ ...s, condutor: CONDUTOR_DEFS.map(f => ({ ...f, value: novos[f.key] ?? '' })) }));
     }
     await carregarDocs();
+    await carregarHistorico();
+  }
+
+  // Confirma o soft delete do documento em `docRemover`: marca removido (Edge
+  // Function), limpa os campos do bloco correspondente, recarrega ativos +
+  // histórico (recalcula as validações cruzadas) e reabre o anexar com o tipo
+  // pré-selecionado para o operador subir o documento certo.
+  async function confirmarRemocao() {
+    if (!docRemover || removendo) return;
+    const tipo = docRemover.tipo;
+    setRemovendo(true);
+    setErroRemocao('');
+    try {
+      await removerDocumento(docRemover.id);
+      // Limpa os campos do bloco correspondente (mantém os campos de formulário).
+      const keys = CAMPOS_POR_TIPO[tipo] || [];
+      if (keys.length) setVals(s => { const n = { ...s }; keys.forEach(k => { n[k] = ''; }); return n; });
+      // Condutor removido → volta ao estado "Faltando" (bloco vazio).
+      if (tipo === 'cnh_condutor') setFields(s => ({ ...s, condutor: [] }));
+      setDocRemover(null);
+      await carregarDocs();        // recarrega ativos → recalcula validações cruzadas
+      await carregarHistorico();   // atualiza o collapse de removidos
+      setTipoAnexar(tipo);
+      setUploadOpen(true);         // reabre o anexar com o tipo pré-selecionado
+    } catch (e) {
+      setErroRemocao(e.message || 'Falha ao remover o documento.');
+    } finally {
+      setRemovendo(false);
+    }
   }
 
   function montarDadosRisco() {
@@ -672,23 +730,89 @@ export default function DetalheRevisao({ os, navigate, onCancelar, cancelando, r
               {docsLoading ? (
                 <><Skeleton height={56} /><Skeleton height={56} /></>
               ) : (
-                TIPOS_DOC.map(tipo => <DocCard key={tipo} tipo={tipo} doc={docsByTipo[tipo] || null} />)
+                TIPOS_DOC.map(tipo => <DocCard key={tipo} tipo={tipo} doc={docsByTipo[tipo] || null} onRemover={setDocRemover} />)
               )}
-              <button onClick={() => setUploadOpen(true)} className="row center gap-7" style={{ justifyContent: 'center', padding: '10px', borderRadius: 'var(--r-sm)', border: '1px dashed var(--border-strong)', background: 'transparent', cursor: 'pointer', color: 'var(--blue)', fontWeight: 600, fontSize: 12.5, font: 'inherit' }}>
+              <button onClick={() => { setTipoAnexar(null); setUploadOpen(true); }} className="row center gap-7" style={{ justifyContent: 'center', padding: '10px', borderRadius: 'var(--r-sm)', border: '1px dashed var(--border-strong)', background: 'transparent', cursor: 'pointer', color: 'var(--blue)', fontWeight: 600, fontSize: 12.5, font: 'inherit' }}>
                 <Icon.plus width={14} height={14} />Anexar novo documento
               </button>
               <span className="fz11 muted" style={{ textAlign: 'center', lineHeight: 1.4 }}>JPG, PNG ou PDF · até 10 MB<br />Anexar dispara nova extração da IA</span>
             </div>
           </Card>
+
+          {/* Histórico de documentos removidos (soft delete) — read-only */}
+          {removidos.length > 0 && (
+            <Card pad={false}>
+              <button onClick={() => setHistAberto(v => !v)} className="card-head" aria-expanded={histAberto}
+                style={{ width: '100%', border: 'none', background: 'transparent', cursor: 'pointer' }}>
+                <div className="row center gap-8 card-title">
+                  <Icon.history width={15} height={15} style={{ color: 'var(--text-mute)' }} />Histórico de documentos removidos
+                </div>
+                <span className="row center gap-6">
+                  <span className="tag">{removidos.length}</span>
+                  <Icon.chevDown width={16} height={16} style={{ color: 'var(--text-mute)', transform: histAberto ? 'rotate(180deg)' : 'none', transition: 'transform .18s' }} />
+                </span>
+              </button>
+              {histAberto && (
+                <div className="col gap-8" style={{ padding: '4px 14px 14px' }}>
+                  {removidos.map(d => {
+                    const arq = String(d.storage_path || '').split('/').pop() || (TIPO_LABEL[d.tipo] || d.tipo);
+                    return (
+                      <div key={d.id} className="row center gap-10" style={{ padding: '9px 11px', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)', background: 'var(--bg-sunken)' }}>
+                        <div style={{ width: 30, height: 30, borderRadius: 8, flex: 'none', display: 'grid', placeItems: 'center', background: 'var(--surface-2)', color: 'var(--text-faint)' }}>
+                          <Icon.doc width={15} height={15} />
+                        </div>
+                        <div className="col" style={{ gap: 1, minWidth: 0 }}>
+                          <span className="fz12 fw600">{TIPO_LABEL[d.tipo] || d.tipo}</span>
+                          <span className="mono fz11 muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{arq}</span>
+                          <span className="fz11 muted">Removido em {dataHora(d.removido_em)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          )}
         </div>
       </div>
 
       <UploadModal
         open={uploadOpen}
-        onClose={() => setUploadOpen(false)}
-        tipoFaltando={TIPOS_DOC.find(t => !docsByTipo[t]) || 'cnh_segurado'}
+        onClose={() => { setUploadOpen(false); setTipoAnexar(null); }}
+        tipoFaltando={tipoAnexar || TIPOS_DOC.find(t => !docsByTipo[t]) || 'cnh_segurado'}
         onExtraido={onExtraido}
       />
+
+      {/* Confirmação de remoção (soft delete) */}
+      <Modal open={!!docRemover} onClose={removendo ? () => {} : () => { setDocRemover(null); setErroRemocao(''); }}
+        title="Remover documento" width={460}
+        footer={
+          <>
+            <span />
+            <div className="row center gap-8">
+              <button className="btn btn-ghost btn-sm" onClick={() => { setDocRemover(null); setErroRemocao(''); }} disabled={removendo}>Cancelar</button>
+              <button className="btn btn-danger btn-sm" onClick={confirmarRemocao} disabled={removendo}>
+                {removendo ? <Icon.refresh className="spin" /> : <Icon.trash width={15} height={15} />} Remover
+              </button>
+            </div>
+          </>
+        }
+      >
+        <div className="col gap-10">
+          <p className="fz13" style={{ margin: 0 }}>
+            Tem certeza que deseja remover este documento{docRemover ? ` (${TIPO_LABEL[docRemover.tipo] || docRemover.tipo})` : ''}?
+          </p>
+          <p className="fz12 muted" style={{ margin: 0 }}>
+            Esta ação é registrada no histórico mas o arquivo é preservado.
+          </p>
+          {erroRemocao && (
+            <div className="row center gap-8" style={{ padding: '10px 12px', borderRadius: 'var(--r-sm)', background: 'var(--red-tint)', border: '1px solid color-mix(in oklch, var(--red) 26%, transparent)' }}>
+              <Icon.alert width={16} height={16} style={{ color: 'var(--red)', flex: 'none' }} />
+              <span className="fz12" style={{ color: 'var(--st-erro-fg)' }}>{erroRemocao}</span>
+            </div>
+          )}
+        </div>
+      </Modal>
     </Page>
   );
 }

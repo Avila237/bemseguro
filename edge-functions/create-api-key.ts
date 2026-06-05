@@ -44,12 +44,15 @@ Deno.serve(async (req: Request) => {
   const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
   const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-  // 1) Exige usuario autenticado (JWT do painel no header Authorization).
+  // 1) Exige usuario autenticado (JWT do painel no header Authorization). Em Edge
+  //    Function nao ha sessao persistida: getUser() sem argumento devolve null —
+  //    passa-se o token explicitamente (extraido do header).
   const authHeader = req.headers.get("Authorization") ?? "";
   const authed = createClient(SUPABASE_URL, ANON_KEY, {
     global: { headers: { Authorization: authHeader } },
   });
-  const { data: userData, error: userErr } = await authed.auth.getUser();
+  const token = authHeader.replace(/^Bearer\s+/i, "");
+  const { data: userData, error: userErr } = await authed.auth.getUser(token);
   if (userErr || !userData?.user) {
     return json({ error: "Nao autenticado" }, 401);
   }

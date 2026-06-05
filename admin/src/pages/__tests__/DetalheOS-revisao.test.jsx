@@ -22,12 +22,16 @@ vi.mock('../../lib/ordens.js', () => ({
 }));
 
 const listarDocumentos = vi.fn();
+const listarHistoricoDocumentos = vi.fn();
 const getSignedUrl = vi.fn();
 const anexarDocumento = vi.fn();
+const removerDocumento = vi.fn();
 vi.mock('../../lib/documentos.js', () => ({
   listarDocumentos: (...a) => listarDocumentos(...a),
+  listarHistoricoDocumentos: (...a) => listarHistoricoDocumentos(...a),
   getSignedUrl: (...a) => getSignedUrl(...a),
   anexarDocumento: (...a) => anexarDocumento(...a),
+  removerDocumento: (...a) => removerDocumento(...a),
   confiancaMedia: (docs) => {
     const v = (docs || []).filter(d => d && d.confianca_extracao != null).map(d => Number(d.confianca_extracao));
     return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
@@ -92,8 +96,10 @@ describe('DetalheOS — estado revisao_manual', () => {
     cancelarOS.mockReset().mockResolvedValue();
     dispararCotacaoAposRevisao.mockReset().mockResolvedValue();
     listarDocumentos.mockReset().mockResolvedValue(DOCS);
+    listarHistoricoDocumentos.mockReset().mockResolvedValue([]);
     getSignedUrl.mockReset().mockResolvedValue('https://signed/doc');
     anexarDocumento.mockReset().mockResolvedValue({ tipo: 'cnh_condutor', dados: { nome: 'Marina Reis', cpf: '98765432100', data_nascimento: '1990-08-05', sexo: 'F' } });
+    removerDocumento.mockReset().mockResolvedValue({ success: true });
     vi.stubGlobal('alert', vi.fn());
     vi.stubGlobal('open', vi.fn());
   });
@@ -257,6 +263,50 @@ describe('DetalheOS — estado revisao_manual', () => {
     expect(pill.getAttribute('title')).toMatch(/dono_eh_condutor=false/);
     // É contabilizada como inconsistência.
     expect(screen.getByText(/1 inconsistência/)).toBeInTheDocument();
+  });
+
+  test('clicar Remover abre o modal de confirmação (arquivo preservado)', async () => {
+    renderDetalhe();
+    await screen.findByText('CNH do segurado');
+    // Cada documento ativo tem um botão "Remover documento".
+    const botoes = screen.getAllByRole('button', { name: /remover documento/i });
+    expect(botoes.length).toBe(2); // cnh_segurado + crlv (condutor está faltando)
+    await userEvent.click(botoes[0]);
+    expect(await screen.findByText(/tem certeza que deseja remover/i)).toBeInTheDocument();
+    expect(screen.getByText(/arquivo é preservado/i)).toBeInTheDocument();
+  });
+
+  test('confirmar remoção do CNH do segurado limpa o bloco e reabre o anexar', async () => {
+    // Mount → DOCS (2); após remover, a recarga devolve só o CRLV.
+    listarDocumentos.mockReset();
+    listarDocumentos.mockResolvedValueOnce(DOCS).mockResolvedValue([DOCS[1]]);
+    renderDetalhe();
+    await screen.findByText('CNH do segurado');
+    expect(screen.getByLabelText('Nome completo')).toHaveValue('Ricardo Cabral');
+
+    await userEvent.click(screen.getAllByRole('button', { name: /remover documento/i })[0]);
+    await userEvent.click(screen.getByRole('button', { name: 'Remover' })); // botão do modal
+
+    await waitFor(() => expect(removerDocumento).toHaveBeenCalledWith('d1'));
+    // Bloco Segurado limpo.
+    await waitFor(() => expect(screen.getByLabelText('Nome completo')).toHaveValue(''));
+    // Reabre o anexar já com o tipo do documento removido pré-selecionado.
+    expect(screen.getByLabelText('Tipo de documento')).toHaveValue('cnh_segurado');
+  });
+
+  test('histórico de documentos removidos aparece em collapse (read-only)', async () => {
+    listarHistoricoDocumentos.mockResolvedValue([
+      { id: 'd1', tipo: 'cnh_segurado', storage_path: 'a/cnh.jpg', created_at: new Date().toISOString(), removido_em: null },
+      { id: 'dx', tipo: 'crlv', storage_path: 'a/crlv-antigo.pdf', created_at: new Date().toISOString(), removido_em: '2026-05-01T10:00:00Z' },
+    ]);
+    renderDetalhe();
+    await screen.findByText('CNH do segurado');
+
+    const header = await screen.findByRole('button', { name: /histórico de documentos removidos/i });
+    await userEvent.click(header);
+    // Item read-only do removido: arquivo + "Removido em".
+    expect(await screen.findByText('crlv-antigo.pdf')).toBeInTheDocument();
+    expect(screen.getByText(/Removido em/i)).toBeInTheDocument();
   });
 
   test('abre o documento via signed URL em nova aba', async () => {

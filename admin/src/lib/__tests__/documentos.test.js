@@ -5,7 +5,10 @@ const h = vi.hoisted(() => ({
   docsResult: { data: [], error: null },
   // Resposta da Edge Function `get-doc-url` (service_role gera a signed URL).
   signedResult: { data: { signedUrl: 'https://signed.example/doc' }, error: null },
+  // Resposta da Edge Function `remover-doc` (soft delete).
+  removerResult: { data: { success: true }, error: null },
   invoke: null,
+  builder: null,
   // Sessão Supabase Auth (JWT do painel) usada pelo anexarDocumento.
   session: { access_token: 'jwt-abc' },
 }));
@@ -14,12 +17,15 @@ vi.mock('../../lib/supabase.js', () => {
   const builder = {};
   builder.select = vi.fn(() => builder);
   builder.eq = vi.fn(() => builder);
+  builder.is = vi.fn(() => builder);
   builder.order = vi.fn(() => Promise.resolve(h.docsResult));
-  // getSignedUrl agora chama a Edge Function `get-doc-url` (o bucket é privado;
-  // a anon key não gera signed URL direto). Outras invocações resolvem vazio.
-  h.invoke = vi.fn((name) => (name === 'get-doc-url'
-    ? Promise.resolve(h.signedResult)
-    : Promise.resolve({ data: null, error: null })));
+  h.builder = builder;
+  // getSignedUrl → `get-doc-url`; removerDocumento → `remover-doc`. Demais vazias.
+  h.invoke = vi.fn((name) => {
+    if (name === 'get-doc-url') return Promise.resolve(h.signedResult);
+    if (name === 'remover-doc') return Promise.resolve(h.removerResult);
+    return Promise.resolve({ data: null, error: null });
+  });
   return {
     supabase: {
       from: vi.fn(() => builder),
@@ -29,11 +35,12 @@ vi.mock('../../lib/supabase.js', () => {
   };
 });
 
-import { listarDocumentos, getSignedUrl, anexarDocumento, confiancaMedia, confiancaCampo } from '../documentos.js';
+import { listarDocumentos, listarHistoricoDocumentos, getSignedUrl, anexarDocumento, removerDocumento, confiancaMedia, confiancaCampo } from '../documentos.js';
 
 describe('listarDocumentos', () => {
   beforeEach(() => {
     h.docsResult = { data: [], error: null };
+    if (h.builder) h.builder.is.mockClear();
   });
 
   test('retorna os documentos da OS', async () => {
@@ -49,9 +56,53 @@ describe('listarDocumentos', () => {
     expect(docs[0].tipo).toBe('cnh_segurado');
   });
 
+  test('filtra só documentos ativos (removido_em IS NULL)', async () => {
+    await listarDocumentos('os-1');
+    expect(h.builder.is).toHaveBeenCalledWith('removido_em', null);
+  });
+
   test('lança quando o Supabase retorna erro', async () => {
     h.docsResult = { data: null, error: { message: 'permission denied' } };
     await expect(listarDocumentos('os-1')).rejects.toThrow(/permission denied/i);
+  });
+});
+
+describe('removerDocumento', () => {
+  beforeEach(() => {
+    h.removerResult = { data: { success: true }, error: null };
+    if (h.invoke) h.invoke.mockClear();
+  });
+
+  test('chama a Edge Function remover-doc com o documento_id', async () => {
+    const out = await removerDocumento('doc-9');
+    expect(out).toEqual({ success: true });
+    expect(h.invoke).toHaveBeenCalledWith('remover-doc', { body: { documento_id: 'doc-9' } });
+  });
+
+  test('lança quando a Edge Function retorna erro', async () => {
+    h.removerResult = { data: null, error: { message: 'Documento não encontrado' } };
+    await expect(removerDocumento('doc-x')).rejects.toThrow(/não encontrado/i);
+  });
+});
+
+describe('listarHistoricoDocumentos', () => {
+  beforeEach(() => {
+    h.docsResult = { data: [], error: null };
+    if (h.builder) h.builder.is.mockClear();
+  });
+
+  test('retorna todos os documentos (ativos + removidos), sem filtrar removidos', async () => {
+    h.docsResult = {
+      data: [
+        { id: 'd1', tipo: 'cnh_segurado', removido_em: null },
+        { id: 'd2', tipo: 'crlv', removido_em: '2026-05-01T10:00:00Z' },
+      ],
+      error: null,
+    };
+    const docs = await listarHistoricoDocumentos('os-1');
+    expect(docs).toHaveLength(2);
+    // Não aplica o filtro de ativos (traz removidos também).
+    expect(h.builder.is).not.toHaveBeenCalled();
   });
 });
 
