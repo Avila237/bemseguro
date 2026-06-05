@@ -367,6 +367,39 @@ function mapearProblema(texto) {
   return { texto, field: null, sev: 'media', label: texto.length > 32 ? texto.slice(0, 30) + '…' : texto };
 }
 
+function soDigitos(v) { return String(v ?? '').replace(/\D/g, ''); }
+
+// Validações cruzadas calculadas NO FRONTEND a partir dos dados extraídos dos 3
+// documentos (documentos_os.dados_extraidos). Recalculadas sempre que um documento
+// é (re)anexado. Devolve problemas no mesmo formato de `mapearProblema`, marcados
+// com `front: true` (sempre pendentes enquanto a condição valer — não dependem de
+// edição de campo). Somam-se às inconsistências vindas do backend (error_message).
+function validacoesCruzadasFront(docsByTipo) {
+  const probs = [];
+  const seg = docsByTipo.cnh_segurado && docsByTipo.cnh_segurado.dados_extraidos;
+  const cond = docsByTipo.cnh_condutor && docsByTipo.cnh_condutor.dados_extraidos;
+  const crlv = docsByTipo.crlv && docsByTipo.crlv.dados_extraidos;
+
+  // Condutor == segurado (mesmo CPF), mas o CRLV diz que o dono é outra pessoa →
+  // provável que o dono do veículo seja o segurado correto (dono_eh_condutor=false).
+  if (seg && cond && crlv) {
+    const segCpf = soDigitos(seg.cpf);
+    const condCpf = soDigitos(cond.cpf);
+    const donoCpf = soDigitos(crlv.cpf_proprietario);
+    if (segCpf && condCpf && donoCpf && segCpf === condCpf && donoCpf !== segCpf) {
+      const nome = crlv.nome_proprietario || '—';
+      probs.push({
+        front: true,
+        field: null,
+        sev: 'media',
+        label: 'Dono do veículo',
+        texto: `CNH do condutor é igual à CNH do segurado, mas o CRLV indica que o proprietário do veículo é ${nome} (CPF ${donoCpf}). Provavelmente o segurado correto é o dono do veículo. Verifique se o formulário deveria ter dono_eh_condutor=false.`,
+      });
+    }
+  }
+  return probs;
+}
+
 function jump(key) {
   if (typeof document === 'undefined') return;
   const el = document.querySelector('[data-field="' + key + '"]');
@@ -425,14 +458,21 @@ export default function DetalheRevisao({ os, navigate, onCancelar, cancelando, r
     return m;
   }, [docs]);
 
-  const problemas = useMemo(
+  // Inconsistências do backend (error_message) + validações cruzadas do frontend
+  // (recalculadas a partir dos dados extraídos dos documentos anexados).
+  const problemasMsg = useMemo(
     () => String(os.error_message || '').split('\n').map(s => s.trim()).filter(Boolean).map(mapearProblema),
     [os.error_message]
   );
+  const problemasFront = useMemo(() => validacoesCruzadasFront(docsByTipo), [docsByTipo]);
+  const problemas = useMemo(() => [...problemasMsg, ...problemasFront], [problemasMsg, problemasFront]);
 
   // Problema "resolvido": campo editado (≠ valor inicial), ou — quando não tem
   // campo (ex.: CNH do condutor faltando) — quando o documento do condutor chega.
+  // Validações de frontend (`front`) são recalculadas dos documentos: enquanto
+  // aparecem, estão pendentes (somem sozinhas quando a condição deixa de valer).
   const resolvido = (p) => {
+    if (p.front) return false;
     if (p.field) return vals[p.field] !== baseVals[p.field];
     return !!docsByTipo.cnh_condutor;
   };
@@ -470,9 +510,14 @@ export default function DetalheRevisao({ os, navigate, onCancelar, cancelando, r
 
   async function onExtraido(tipo, file) {
     const data = await anexarDocumento(os.id, tipo, file);
-    const novos = limparUndefined(camposExtraidos(tipo, data && data.dados));
+    // Usa o tipo REAL retornado pela Edge Function (autoritativo) para decidir o
+    // bloco a preencher — anexar CNH do condutor NÃO pode sobrescrever o Segurado,
+    // e vice-versa. `camposExtraidos` mapeia cada tipo só para as chaves do seu
+    // bloco (cnh_segurado→segurado, cnh_condutor→condutor, crlv→veículo).
+    const tipoReal = (data && data.tipo) || tipo;
+    const novos = limparUndefined(camposExtraidos(tipoReal, data && data.dados));
     setVals(s => ({ ...s, ...novos }));
-    if (tipo === 'cnh_condutor' && fields.condutor.length === 0) {
+    if (tipoReal === 'cnh_condutor' && fields.condutor.length === 0) {
       setFields(s => ({ ...s, condutor: CONDUTOR_DEFS.map(f => ({ ...f, value: novos[f.key] ?? '' })) }));
     }
     await carregarDocs();

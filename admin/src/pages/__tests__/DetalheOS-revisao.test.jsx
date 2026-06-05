@@ -196,6 +196,69 @@ describe('DetalheOS — estado revisao_manual', () => {
     expect(screen.getByRole('button', { name: /anexar e extrair/i })).toBeInTheDocument();
   });
 
+  // Anexa um arquivo pelo modal "Anexar novo documento" (seleciona tipo + arquivo).
+  async function anexarPeloModal(tipoSelecionado, file) {
+    await userEvent.click(screen.getByRole('button', { name: /anexar novo documento/i }));
+    await userEvent.selectOptions(screen.getByLabelText('Tipo de documento'), tipoSelecionado);
+    const fileInput = document.querySelector('input[type="file"]');
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await userEvent.click(screen.getByRole('button', { name: /anexar e extrair/i }));
+  }
+
+  test('anexar CNH do condutor preenche só o bloco Condutor (não toca no Segurado)', async () => {
+    anexarDocumento.mockResolvedValueOnce({
+      tipo: 'cnh_condutor',
+      dados: { nome: 'Marina Reis', cpf: '98765432100', data_nascimento: '1990-08-05', sexo: 'F' },
+    });
+    renderDetalhe();
+    await screen.findByText('CNH do segurado');
+    // Antes: nome do segurado é "Ricardo Cabral".
+    expect(screen.getByDisplayValue('Ricardo Cabral')).toBeInTheDocument();
+
+    await anexarPeloModal('cnh_condutor', new File(['x'], 'cnh.jpg', { type: 'image/jpeg' }));
+
+    // Condutor preenchido com os dados extraídos…
+    expect(await screen.findByDisplayValue('Marina Reis')).toBeInTheDocument();
+    // …e o Segurado permanece intacto (não foi sobrescrito).
+    expect(screen.getByDisplayValue('Ricardo Cabral')).toBeInTheDocument();
+  });
+
+  test('anexar CRLV preenche só o bloco Veículo (não toca no Segurado)', async () => {
+    anexarDocumento.mockResolvedValueOnce({
+      tipo: 'crlv',
+      dados: { placa: 'XYZ9A88', chassi: '9BWAA00000A000000', marca: 'Fiat', modelo: 'Argo', ano_fabricacao: '2022', ano_modelo: '2023', codigo_fipe: '001234-5' },
+    });
+    renderDetalhe();
+    await screen.findByText('CNH do segurado');
+
+    await anexarPeloModal('crlv', new File(['x'], 'crlv.pdf', { type: 'application/pdf' }));
+
+    // Veículo preenchido (placa nova)…
+    expect(await screen.findByDisplayValue('XYZ9A88')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Argo')).toBeInTheDocument();
+    // …e o Segurado permanece intacto.
+    expect(screen.getByDisplayValue('Ricardo Cabral')).toBeInTheDocument();
+  });
+
+  test('validação cruzada: condutor = segurado mas CRLV indica outro dono', async () => {
+    // OS sem inconsistências de backend → o único problema é a validação de front.
+    carregarOS.mockResolvedValue({ os: osRevisao({ error_message: '' }), cotacoes: [] });
+    listarDocumentos.mockResolvedValue([
+      { id: 'd1', tipo: 'cnh_segurado', storage_path: 'a/cnh_seg.jpg', storage_bucket: 'documentos-clientes', confianca_extracao: 0.9, dados_extraidos: { nome: 'Ricardo Cabral', cpf: '12345678900' }, created_at: new Date().toISOString() },
+      { id: 'd3', tipo: 'cnh_condutor', storage_path: 'a/cnh_cond.jpg', storage_bucket: 'documentos-clientes', confianca_extracao: 0.9, dados_extraidos: { nome: 'Ricardo Cabral', cpf: '12345678900' }, created_at: new Date().toISOString() },
+      { id: 'd2', tipo: 'crlv', storage_path: 'a/crlv.pdf', storage_bucket: 'documentos-clientes', confianca_extracao: 0.9, dados_extraidos: { placa: 'JCU9D37', cpf_proprietario: '99988877766', nome_proprietario: 'Joana Dona' }, created_at: new Date().toISOString() },
+    ]);
+    renderDetalhe();
+    await screen.findByText('CNH do segurado');
+
+    // Pendência aparece no banner (pill "Dono do veículo" com a mensagem no title).
+    const pill = await screen.findByRole('button', { name: /dono do veículo/i });
+    expect(pill).toHaveAttribute('title', expect.stringContaining('Joana Dona'));
+    expect(pill.getAttribute('title')).toMatch(/dono_eh_condutor=false/);
+    // É contabilizada como inconsistência.
+    expect(screen.getByText(/1 inconsistência/)).toBeInTheDocument();
+  });
+
   test('abre o documento via signed URL em nova aba', async () => {
     renderDetalhe();
     await screen.findByText('CRLV');

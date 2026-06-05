@@ -645,8 +645,11 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
       >85, azul >75, âmbar <75) e campos com problema **destacados em laranja**;
       **trilho de documentos** à direita (de `documentos_os`) com confiança, botão
       **Ver** (signed URL 1h), estado "Não enviado pelo CRM" e **Anexar novo
-      documento** (modal → upload → extração IA → preenche os campos; se a IA
-      detectar **documento de tipo incorreto** — 422 — o modal mostra um alerta
+      documento** (modal → upload → extração IA → preenche **apenas o bloco
+      correspondente** ao **tipo retornado pela Edge Function** — `cnh_segurado`→
+      Segurado, `cnh_condutor`→Condutor, `crlv`→Veículo —, via `camposExtraidos`;
+      anexar a CNH do condutor **não** sobrescreve o Segurado; se a IA detectar
+      **documento de tipo incorreto** — 422 — o modal mostra um alerta
       claro "anexou um X, mas selecionou Y", **sem fechar** nem limpar os campos,
       para o operador corrigir); card
       **Confiança média**; rodapé com "N campos alterados", "N pendências",
@@ -663,6 +666,15 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
       backend reconhece (slug `casado` / letra `M`), via `admin/src/lib/enums.js`
       (`ESTADO_CIVIL_MAP` / `SEXO_MAP`). Valor fora do padrão (vindo do CRM) entra
       como opção crua, sem se perder.
+      **Validações cruzadas no frontend** (`validacoesCruzadasFront`, a partir de
+      `documentos_os.dados_extraidos`, recalculadas a cada (re)anexo) — somam-se às
+      inconsistências do backend (`error_message`) no banner e na contagem de
+      "N pendências", marcadas com `front:true` (sempre pendentes enquanto a
+      condição valer; não bloqueiam o disparo — `sev:'media'`). Hoje cobre:
+      **condutor == segurado, mas o CRLV indica outro dono** (CPF do condutor =
+      CPF do segurado e `cpf_proprietario` do CRLV ≠ esse CPF) → alerta de que
+      provavelmente o dono do veículo é o segurado correto (`dono_eh_condutor`
+      deveria ser `false`).
   - `NovaCotacao.jsx` — Tela 05 (criação manual de OS). 4 seções: Cliente/Lead
     (toggle Novo/Existente — Existente é placeholder), Dados da OS (tipo só Auto
     ativo; Residencial/Empresarial desabilitados; prioridade; observações),
