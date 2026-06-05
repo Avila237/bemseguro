@@ -185,6 +185,7 @@ describe('POST /extract/cnh — fluxo completo', () => {
       tamanho_bytes: conteudo.length,
       dados_extraidos: RESULTADO_CNH.dados,
       confianca_extracao: 0.98,
+      confianca_por_campo: RESULTADO_CNH.confianca, // { nome: 0.97, cpf: 0.99 }
       revisado: false,
     });
   });

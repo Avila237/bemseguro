@@ -196,8 +196,9 @@ integração CRM + IA** (mesma da migração 005). O arquivo binário fica no
 | storage_bucket     | text                    | default `documentos-clientes`                    |
 | mime_type          | text nullable           | Ex.: `image/jpeg`, `application/pdf`             |
 | tamanho_bytes      | integer nullable        |                                                  |
-| dados_extraidos    | jsonb nullable          | Resultado da extração pela IA                    |
-| confianca_extracao | numeric(3,2) nullable   | 0.00–1.00 (confiança da IA)                      |
+| dados_extraidos    | jsonb nullable          | Resultado da extração pela IA (objeto `dados`)   |
+| confianca_extracao | numeric(3,2) nullable   | 0.00–1.00 (confiança **média** da IA)            |
+| confianca_por_campo| jsonb nullable          | Confiança **por campo** (`{nome:0.95,cpf:0.98}`) — migração 008 |
 | revisado           | boolean                 | default `false`                                  |
 | revisado_por       | uuid FK → auth.users    | Quem revisou (nullable até a revisão)            |
 | revisado_em        | timestamptz nullable    |                                                  |
@@ -261,7 +262,8 @@ tudo em `documentos_os`. Fazem parte da feature de integração CRM + IA.
   4. **Insert em `documentos_os`** — `os_id`, `tipo`, `storage_path`,
      `storage_bucket`, `mime_type`, `tamanho_bytes`, `dados_extraidos` (= `dados`
      da IA), `confianca_extracao` (= **média** das confianças individuais, ou
-     `null` se vazio), `revisado:false`; `.select('id').single()`.
+     `null` se vazio), **`confianca_por_campo`** (= objeto `confianca` da IA, por
+     campo — migração 008), `revisado:false`; `.select('id').single()`.
   5. **Resposta 200** — `{ success, tipo, documento_id, storage_path, dados,
      confianca, observacoes, modelo, tokensUsados }`.
 
@@ -573,6 +575,8 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
 - `/admin/ordens` — Lista de Ordens de Serviço (Tela 03). Componente
   `pages/OrdemServico.jsx`. Linhas navegam para `/admin/ordens/:id`.
 - `/admin/ordens/:id` — Detalhe da OS (Tela 04). Componente `pages/DetalheOS.jsx`.
+  Tem **2 modos**: **operação normal** (cotações + dados) e, quando
+  `status === 'revisao_manual'`, o **workspace de revisão** (`pages/DetalheRevisao.jsx`).
 - `/admin/nova-cotacao` — Nova Cotação (Tela 05). Componente `pages/NovaCotacao.jsx`.
 - `/admin/seguradoras` — Seguradoras (Tela 06). Componente `pages/Seguradoras.jsx`.
 - `/admin/api-keys` — API Keys (Tela 07). Componente `pages/ApiKeys.jsx`.
@@ -619,6 +623,26 @@ globalmente em `main.jsx`. Cada tela nova deve reusar estes tokens/classes.
     placeholder); coluna direita = cards Segurado/Veículo/Condutor/Apólice
     Anterior + JSON dos `dados_risco`. **Polling de 5s** enquanto `cotando`,
     skeletons, estado vazio e **404** se a OS não existir.
+    - **Modo revisão manual** (`pages/DetalheRevisao.jsx`, Tela 04c "Workspace
+      denso"): quando `status === 'revisao_manual'`, o `DetalheOS` delega para este
+      componente em vez do layout normal. Tem: **banner âmbar de inconsistências**
+      (lê `os.error_message` separado por `\n`; cada problema vira um **pill
+      clicável** que rola até o campo, via `mapearProblema`); **formulário denso e
+      editável** em 3 blocos (Segurado/Veículo/Condutor) seedado de `dados_risco`,
+      cada campo com **badge de confiança da IA** ("IA · alta/média/revisar" — verde
+      >85, azul >75, âmbar <75) e campos com problema **destacados em laranja**;
+      **trilho de documentos** à direita (de `documentos_os`) com confiança, botão
+      **Ver** (signed URL 1h), estado "Não enviado pelo CRM" e **Anexar novo
+      documento** (modal → upload → extração IA → preenche os campos); card
+      **Confiança média**; rodapé com "N campos alterados", "N pendências",
+      **Cancelar OS** e **Disparar cotação** (habilita só sem pendências críticas →
+      `dispararCotacaoAposRevisao`, recarrega e a OS entra em `cotando`).
+      **Confiança por campo:** o badge de cada campo usa
+      `documentos_os.confianca_por_campo` (a IA retorna a confiança por campo —
+      migração 008), via `confiancaCampo(docs, tipoDoc, iaKey)`; cada campo declara
+      seu `iaKey` (chave da IA) + `doc` (tipo). Fallback para a média do documento
+      em docs antigos sem `confianca_por_campo`; campos vindos do formulário
+      (estado civil, CEP) não têm badge.
   - `NovaCotacao.jsx` — Tela 05 (criação manual de OS). 4 seções: Cliente/Lead
     (toggle Novo/Existente — Existente é placeholder), Dados da OS (tipo só Auto
     ativo; Residencial/Empresarial desabilitados; prioridade; observações),
@@ -801,6 +825,40 @@ Em `admin/src/lib/detalhe.js`:
 - Os dados de Segurado/Veículo/Condutor/Apólice saem de `os_cotacao.dados_risco`
   (formato estruturado novo), com fallback para as colunas da própria OS
   (`nome`, `cpf`, `email`, `cep`, `placa`).
+
+**Revisão manual — `admin/src/lib/documentos.js`** (helpers do workspace de revisão):
+
+- `listarDocumentos(osId)` — `documentos_os select(...) eq os_id order created_at`
+  (inclui `dados_extraidos`, `confianca_extracao` e `confianca_por_campo`).
+- `getSignedUrl(storagePath, bucket?)` — `supabase.storage.from('documentos-clientes')
+  .createSignedUrl(path, 3600)` → link temporário de **1h** (bucket é privado).
+- `anexarDocumento(osId, tipo, file)` — lê o arquivo como base64 e chama a Edge
+  Function **`extract-doc`** (`supabase.functions.invoke`), um **proxy
+  server-side** (`edge-functions/extract-doc.ts`, multipart) para o
+  `/extract/{cnh|crlv}` do Railway — o secret do Railway **não** vai pro browser
+  (mesmo padrão de `lookup-placa`/`run-quote`). Deploy da função é manual.
+- `confiancaMedia(documentos)` — média de `confianca_extracao` (fração 0–1) ou `null`.
+- `confiancaCampo(documentos, tipoDoc, campo)` — confiança de **um campo**
+  (`confianca_por_campo[campo]` do documento daquele tipo; ex.: CPF na CNH do
+  segurado), fração 0–1 ou `null`. Também exporta `TIPO_LABEL` e `TIPOS_DOC`.
+
+**`admin/src/lib/ordens.js` → `dispararCotacaoAposRevisao(osId, dadosEditados)`** —
+persiste `{ dados_risco, placa, cpf }` editados (`update ... select('id')`, falha
+em 0 linhas como o `cancelarOS`), volta a OS para `status='cotando'` (limpa
+`error_message`) e dispara via **`run-quote`** (`supabase.functions.invoke`) —
+reusa o caminho seguro do "Recotar" (o Railway `/quote/auto` é chamado pela Edge
+Function, com o token guardado no servidor).
+
+**Edge Function `extract-doc`** (`edge-functions/extract-doc.ts`, Deno) — **proxy**
+do painel para o Railway, usado pelo `anexarDocumento`. Recebe `multipart/form-data`
+(`os_id`, `tipo` ∈ `cnh_segurado|cnh_condutor|crlv`, `arquivo`) com o **JWT** do
+painel (`Authorization Bearer` — validado pelo gateway do Supabase), reconstrói o
+multipart e repassa ao `/extract/{cnh|crlv}` do Railway com o `x-secret-token`
+(`RAILWAY_SECRET_TOKEN`, server-side). É necessária porque o `/extract` exige o
+secret do Railway e o bucket é privado (só `service_role`) — o anexo **não pode**
+ir direto do browser. CRLV → `/extract/crlv`; CNH (segurado/condutor) →
+`/extract/cnh` (encaminha o `tipo`). CORS liberado para o browser. **Deploy
+manual** no Supabase (env: `RAILWAY_URL`, `RAILWAY_SECRET_TOKEN`).
 
 ### Nova Cotação — lookup de placa e payload (Tela 05)
 

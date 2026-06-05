@@ -112,3 +112,34 @@ export async function cancelarOS(id) {
     throw new Error('Nenhuma alteração foi salva — você pode não ter permissão para cancelar esta OS. Avise o suporte.');
   }
 }
+
+// Dispara a cotação após a revisão manual: persiste os campos corrigidos pelo
+// operador em `dados_risco` (+ placa/cpf nas colunas), volta a OS para
+// `cotando` e dispara a cotação real via Edge Function `run-quote` (que chama o
+// Railway /quote/auto com o secret guardado no servidor — o browser nunca toca
+// no token). Reusa o mesmo caminho seguro do "Recotar".
+//
+// `dadosEditados` = { dados_risco, placa, cpf }.
+export async function dispararCotacaoAposRevisao(osId, dadosEditados = {}) {
+  const { dados_risco, placa, cpf } = dadosEditados;
+  const { data, error } = await supabase
+    .from('os_cotacao')
+    .update({
+      dados_risco,
+      placa: placa || null,
+      cpf: cpf || null,
+      status: 'cotando',
+      error_message: null,
+    })
+    .eq('id', osId)
+    .select('id');
+  if (error) throw new Error(error.message || 'Falha ao salvar os dados revisados');
+  if (!data || data.length === 0) {
+    throw new Error('Nenhuma alteração foi salva — você pode não ter permissão. Avise o suporte.');
+  }
+
+  const { error: invErr } = await supabase.functions.invoke('run-quote', {
+    body: { os_id: osId, dados_risco },
+  });
+  if (invErr) throw new Error(invErr.message || 'Falha ao disparar a cotação');
+}

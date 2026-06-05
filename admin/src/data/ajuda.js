@@ -144,7 +144,7 @@ export const SECOES = [
   /* ===================================================================== 04 */
   {
     id: 'acompanhando', num: '04', label: 'Acompanhando OS', icon: 'list',
-    kw: 'status pendente cotando cotado erro cancelada recotar cancelar acoes pdf detalhe lista ordens erros recentes extraindo documentos revisao manual aguardando crm callback ia cnh crlv',
+    kw: 'status pendente cotando cotado erro cancelada recotar cancelar acoes pdf detalhe lista ordens erros recentes extraindo documentos revisao manual aguardando crm callback ia cnh crlv banner inconsistencias anexar documento editar confianca disparar cotacao pendencias',
     title: 'Acompanhando OS',
     lead: 'Como ler o status de cada cotação, abrir o detalhe e usar as ações de recotar e cancelar.',
     blocks: [
@@ -161,6 +161,20 @@ export const SECOES = [
         ['cancelada', 'Cancelada', 'Encerrada por um operador. Não recebe mais preços.'],
       ] },
       { type: 'callout', variant: 'atencao', title: '“Revisão manual” pede a sua ação', text: 'Diferente dos outros, **Revisão manual** não anda sozinho: a IA achou um conflito entre o formulário e os documentos (CNH/CRLV) e **espera por você**. Abra a OS, confirme ou corrija os dados e siga — só então a cotação é disparada.' },
+      { type: 'h3', text: 'A tela de revisão manual' },
+      { type: 'p', text: 'Quando uma OS está em **Revisão manual**, ao abri-la você vê uma tela diferente — um **workspace de revisão**, não o detalhe normal. No topo, um **banner âmbar** lista as inconsistências que a IA encontrou (ex.: CNH vencida, CPF com leitura incerta, nome divergente). Cada inconsistência é um **botão**: clique para pular direto ao campo correspondente.' },
+      { type: 'ul', items: [
+        '**Dados extraídos, editáveis:** os blocos Segurado, Veículo e Condutor mostram o que a IA leu dos documentos. Cada campo tem uma **etiqueta de confiança** (“IA · alta 96%”, “IA · média 84%”, “IA · revisar 67%”) e os campos com problema ficam **destacados em laranja** com a explicação abaixo. Corrija o que precisar — tudo é editável.',
+        '**Trilho de documentos (à direita):** lista a CNH do segurado, o CRLV e a CNH do condutor com o nome do arquivo, a **confiança da extração** e a data. O botão **Ver** abre o documento original numa nova aba (link temporário, expira em 1 hora). Quando um documento não veio do CRM, aparece **“Não enviado pelo CRM”**.',
+        '**Confiança média:** um indicador agregado mostra a média de confiança de todos os documentos.',
+      ] },
+      { type: 'steps', items: [
+        'Confira o **banner** e clique em cada inconsistência para revisar o campo.',
+        'Corrija os campos destacados (e qualquer outro que a IA tenha lido errado).',
+        'Falta um documento (ex.: a CNH do condutor)? Clique em **Anexar novo documento**, escolha o tipo e envie um **JPG, PNG ou PDF até 10 MB** — a IA lê o arquivo e preenche os campos sozinha.',
+        'Quando não houver mais **pendências críticas**, clique em **Disparar cotação**. A OS passa para **Cotando** e você acompanha os retornos normalmente.',
+      ] },
+      { type: 'callout', variant: 'dica', title: 'O rodapé te guia', text: 'No rodapé da revisão você vê quantos **campos alterou** e quantas **pendências** ainda faltam. O botão **Disparar cotação** só habilita quando as pendências **críticas** estão resolvidas — assim você não cota com um dado claramente errado.' },
       { type: 'callout', variant: 'info', title: 'Estados da integração com o CRM/IA', text: '**Extraindo documentos**, **Revisão manual** e **Aguardando CRM** fazem parte da integração automática com o CRM (leitura de documentos por IA e reenvio da cotação). Você verá esses status conforme essa integração for ativada.' },
       { type: 'callout', variant: 'info', title: 'Onde ver o motivo de um erro', text: 'O **detalhe da OS não mostra a mensagem de erro**. Para saber por que uma OS deu erro, vá em **Monitoring → “Erros recentes”** — lá aparece a OS afetada e o motivo.' },
       { type: 'h3', text: 'Abrir o detalhe' },

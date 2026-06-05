@@ -1,0 +1,169 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('../../lib/supabase.js', () => ({
+  supabase: { auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { email: 'admin@bemseguro.com' } } }) } },
+}));
+
+const carregarOS = vi.fn();
+const recotarOS = vi.fn();
+vi.mock('../../lib/detalhe.js', () => ({
+  carregarOS: (...a) => carregarOS(...a),
+  recotarOS: (...a) => recotarOS(...a),
+}));
+
+const cancelarOS = vi.fn();
+const dispararCotacaoAposRevisao = vi.fn();
+vi.mock('../../lib/ordens.js', () => ({
+  cancelarOS: (...a) => cancelarOS(...a),
+  dispararCotacaoAposRevisao: (...a) => dispararCotacaoAposRevisao(...a),
+}));
+
+const listarDocumentos = vi.fn();
+const getSignedUrl = vi.fn();
+const anexarDocumento = vi.fn();
+vi.mock('../../lib/documentos.js', () => ({
+  listarDocumentos: (...a) => listarDocumentos(...a),
+  getSignedUrl: (...a) => getSignedUrl(...a),
+  anexarDocumento: (...a) => anexarDocumento(...a),
+  confiancaMedia: (docs) => {
+    const v = (docs || []).filter(d => d && d.confianca_extracao != null).map(d => Number(d.confianca_extracao));
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  },
+  confiancaCampo: (docs, tipo, campo) => {
+    const d = (docs || []).find(x => x && x.tipo === tipo);
+    const v = d && d.confianca_por_campo ? Number(d.confianca_por_campo[campo]) : NaN;
+    return Number.isFinite(v) ? v : null;
+  },
+  TIPO_LABEL: { cnh_segurado: 'CNH do segurado', cnh_condutor: 'CNH do condutor', crlv: 'CRLV' },
+  TIPOS_DOC: ['cnh_segurado', 'crlv', 'cnh_condutor'],
+}));
+
+import DetalheOS from '../DetalheOS.jsx';
+
+const ID = 'a1f3d8aa-0000-0000-0000-000000000000';
+
+function osRevisao(over = {}) {
+  return {
+    id: ID,
+    status: 'revisao_manual',
+    placa: 'JCU9D37',
+    cpf: '12345678900',
+    nome: 'Ricardo Cabral',
+    cep: '98700-000',
+    created_at: new Date().toISOString(),
+    error_message: [
+      'CNH do segurado vencida em 12/03/2024',
+      'Baixa confiança na extração do campo cpf',
+      "Nome no formulário ('Ricardo') diferente do nome na CNH ('Ricardo Cabral')",
+      'CNH do condutor principal não foi enviada pelo CRM',
+    ].join('\n'),
+    dados_risco: {
+      ramo: 'auto',
+      segurado: { nome: 'Ricardo Cabral', cpf: '12345678900', dataNascimento: '1992-12-10', sexo: 'M', estadoCivil: 'casado', cep: '98700-000', validade_cnh: '2024-03-12' },
+      veiculo: { placa: 'JCU9D37', chassi: '9BWKL45U1SP009017', marca: 'Volkswagen', modelo: 'Saveiro Robust 1.6', anoFabricacao: '2024', anoModelo: '2024', fipe: '005340-7' },
+      condutor: null,
+    },
+    ...over,
+  };
+}
+
+const DOCS = [
+  { id: 'd1', tipo: 'cnh_segurado', storage_path: 'a1f3/cnh_segurado-1717.jpg', storage_bucket: 'documentos-clientes', confianca_extracao: 0.64, confianca_por_campo: { nome: 0.96, cpf: 0.58, data_nascimento: 0.93, sexo: 0.91, validade_cnh: 0.94 }, created_at: new Date().toISOString() },
+  { id: 'd2', tipo: 'crlv', storage_path: 'a1f3/crlv-1717.pdf', storage_bucket: 'documentos-clientes', confianca_extracao: 0.91, confianca_por_campo: { placa: 0.99, chassi: 0.67, marca: 0.95, modelo: 0.73, ano_fabricacao: 0.95, ano_modelo: 0.95, codigo_fipe: 0.88 }, created_at: new Date().toISOString() },
+];
+
+function renderDetalhe() {
+  return render(
+    <MemoryRouter initialEntries={[`/ordens/${ID}`]}>
+      <Routes>
+        <Route path="/ordens/:id" element={<DetalheOS />} />
+        <Route path="/ordens" element={<div>Lista de OS</div>} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+
+describe('DetalheOS — estado revisao_manual', () => {
+  beforeEach(() => {
+    carregarOS.mockReset().mockResolvedValue({ os: osRevisao(), cotacoes: [] });
+    cancelarOS.mockReset().mockResolvedValue();
+    dispararCotacaoAposRevisao.mockReset().mockResolvedValue();
+    listarDocumentos.mockReset().mockResolvedValue(DOCS);
+    getSignedUrl.mockReset().mockResolvedValue('https://signed/doc');
+    anexarDocumento.mockReset().mockResolvedValue({ tipo: 'cnh_condutor', dados: { nome: 'Marina Reis', cpf: '98765432100', data_nascimento: '1990-08-05', sexo: 'F' } });
+    vi.stubGlobal('alert', vi.fn());
+    vi.stubGlobal('open', vi.fn());
+  });
+
+  test('renderiza banner de inconsistências com pills clicáveis', async () => {
+    renderDetalhe();
+    expect(await screen.findByText('4 inconsistências')).toBeInTheDocument();
+    // pills (botões) por problema
+    expect(screen.getByRole('button', { name: 'Validade da CNH' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'CPF' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nome' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'CNH do condutor' })).toBeInTheDocument();
+  });
+
+  test('lista os documentos (com confiança) e o faltante', async () => {
+    renderDetalhe();
+    await screen.findByText('4 inconsistências');
+    // documentos carregam num efeito async — aguarda o primeiro card.
+    expect(await screen.findByText('CNH do segurado')).toBeInTheDocument();
+    expect(screen.getByText('CRLV')).toBeInTheDocument();
+    // confiança média (0.64 + 0.91)/2 = 0.775 → 78%
+    expect(screen.getByText(/78% · extração da IA/)).toBeInTheDocument();
+    // CNH do condutor não foi enviada
+    expect(screen.getByText('Não enviado pelo CRM')).toBeInTheDocument();
+  });
+
+  test('campo com problema fica destacado e edição conta como alteração', async () => {
+    renderDetalhe();
+    await screen.findByText('4 inconsistências');
+    expect(screen.getByText('Nenhuma alteração ainda')).toBeInTheDocument();
+
+    const inputNome = screen.getByDisplayValue('Ricardo Cabral');
+    fireEvent.change(inputNome, { target: { value: 'Ricardo de Souza Cabral' } });
+    expect(await screen.findByText('1 campo alterado')).toBeInTheDocument();
+  });
+
+  test('dispara cotação quando não há pendências críticas', async () => {
+    // OS sem inconsistências críticas → botão habilitado
+    carregarOS.mockResolvedValue({ os: osRevisao({ error_message: '' }), cotacoes: [] });
+    renderDetalhe();
+    const botao = await screen.findByRole('button', { name: /disparar cotação/i });
+    expect(botao).not.toBeDisabled();
+    await userEvent.click(botao);
+    await waitFor(() => expect(dispararCotacaoAposRevisao).toHaveBeenCalled());
+    expect(dispararCotacaoAposRevisao.mock.calls[0][0]).toBe(ID);
+    expect(dispararCotacaoAposRevisao.mock.calls[0][1]).toHaveProperty('dados_risco');
+  });
+
+  test('botão Disparar fica desabilitado com pendências críticas', async () => {
+    renderDetalhe();
+    const botao = await screen.findByRole('button', { name: /disparar cotação/i });
+    expect(botao).toBeDisabled();
+  });
+
+  test('mostra badges de confiança fiéis por campo (confianca_por_campo)', async () => {
+    renderDetalhe();
+    await screen.findByText('CNH do segurado'); // documentos carregados
+    // o chip mostra "IA · <nível> NN%"; regex evita depender do % exato/caractere ·
+    // campos com confiança < 75 (cpf 58, chassi 67, modelo 73) → "IA · revisar"
+    expect(screen.getAllByText(/IA.+revisar/).length).toBeGreaterThan(0);
+    // campos com confiança > 85 (nome 96, placa 99, marca 95…) → "IA · alta"
+    expect(screen.getAllByText(/IA.+alta/).length).toBeGreaterThan(0);
+  });
+
+  test('abre o documento via signed URL em nova aba', async () => {
+    renderDetalhe();
+    await screen.findByText('CRLV');
+    const verBtns = screen.getAllByRole('button', { name: /ver/i });
+    await userEvent.click(verBtns[0]);
+    await waitFor(() => expect(getSignedUrl).toHaveBeenCalled());
+    await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://signed/doc', '_blank', 'noopener'));
+  });
+});

@@ -6,6 +6,7 @@ import { Icon } from '../components/Icons.jsx';
 import { BRL, numeroOS, maskCPF, timeAgo, veiculoDe } from '../lib/format.js';
 import { carregarOS, recotarOS } from '../lib/detalhe.js';
 import { cancelarOS } from '../lib/ordens.js';
+import DetalheRevisao from './DetalheRevisao.jsx';
 
 const SEXO = { M: 'Masculino', F: 'Feminino' };
 const cap = s => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : '');
@@ -245,6 +246,21 @@ export default function DetalheOS() {
       <Page title="Erro" subtitle="">
         <Card><Empty icon="alert" title="Não foi possível carregar a OS" sub={erro} /></Card>
       </Page>
+    );
+  }
+
+  // Estado revisao_manual: workspace de revisão (banner de inconsistências,
+  // edição dos dados extraídos pela IA, trilho de documentos). Os demais status
+  // mantêm o layout de operação normal abaixo.
+  if (status === 'revisao_manual') {
+    return (
+      <DetalheRevisao
+        os={os}
+        navigate={navigate}
+        onCancelar={handleCancelar}
+        cancelando={cancelando}
+        reload={() => fetchOS()}
+      />
     );
   }
 

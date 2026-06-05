@@ -149,6 +149,7 @@ function criarHandler(docBase) {
           tamanho_bytes: size,
           dados_extraidos: extracao.dados,
           confianca_extracao: mediaConfianca(extracao.confianca),
+          confianca_por_campo: extracao.confianca || null,
           revisado: false,
         })
         .select('id')
