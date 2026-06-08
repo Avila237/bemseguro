@@ -284,3 +284,127 @@ describe('processarComDocs — validação (b) guard de nome ausente', () => {
     expect(updates[updates.length - 1].error_message).toBeNull();
   });
 });
+
+// Validação (a) — confiança da IA em campo crítico (worker L198–212). A regra é
+// `c == null || c < LIMIAR_CONFIANCA(0.7)`. Bordas: o valor EXATO do limiar e a
+// ausência de confiança.
+describe('processarComDocs — validação (a) bordas de confiança', () => {
+  test('confiança EXATAMENTE no limiar (0.7) → não é baixa (cotando) [comparação é < estrito]', async () => {
+    const ext = extracaoPadrao();
+    ext.cnh_segurado.confianca.cpf = 0.7; // == LIMIAR_CONFIANCA → NÃO dispara
+    const { getSupabaseFn, updates } = makeSupabase();
+    const dispararQuote = jest.fn().mockResolvedValue({});
+    const r = await processarComDocs(inputPadrao(), {
+      extrair: makeExtrair(ext), buscarFipe: fipeOk(), dispararQuote, getSupabaseFn, agora: HOJE,
+    });
+    expect(r.status).toBe('cotando');
+    expect(dispararQuote).toHaveBeenCalledTimes(1);
+    expect(updates[updates.length - 1].error_message).toBeNull(); // sem "Baixa confiança"
+  });
+
+  test('confiança ausente (IA não retornou o campo) → tratada como baixa (revisão manual)', async () => {
+    const ext = extracaoPadrao();
+    delete ext.cnh_segurado.confianca.cpf; // undefined → `c == null` verdadeiro (idem null)
+    const { getSupabaseFn } = makeSupabase();
+    const dispararQuote = jest.fn();
+    const r = await processarComDocs(inputPadrao(), {
+      extrair: makeExtrair(ext), buscarFipe: fipeOk(), dispararQuote, getSupabaseFn, agora: HOJE,
+    });
+    expect(r.status).toBe('revisao_manual');
+    expect(r.error_message).toMatch(/Baixa confiança na extração do campo cpf/);
+    expect(dispararQuote).not.toHaveBeenCalled();
+  });
+});
+
+// Validação (c) — CNH do segurado vencida (worker L222–226). Bordas: validade
+// igual a hoje (comparação `<` estrita) e validade ausente (guard pula).
+describe('processarComDocs — validação (c) bordas de validade do segurado', () => {
+  test('validade EXATAMENTE hoje → não vencida (cotando) [borda: comparação é < estrito]', async () => {
+    const ext = extracaoPadrao();
+    ext.cnh_segurado.dados.validade_cnh = HOJE_ISO; // == hoje → NÃO vence (simétrico ao teste de (d))
+    const { getSupabaseFn, updates } = makeSupabase();
+    const dispararQuote = jest.fn().mockResolvedValue({});
+    const r = await processarComDocs(inputPadrao(), {
+      extrair: makeExtrair(ext), buscarFipe: fipeOk(), dispararQuote, getSupabaseFn, agora: HOJE,
+    });
+    expect(r.status).toBe('cotando');
+    expect(dispararQuote).toHaveBeenCalledTimes(1);
+    expect(updates[updates.length - 1].error_message).toBeNull(); // sem "CNH do segurado vencida"
+  });
+
+  test('validade ausente na CNH → guard `if (dCnh.validade_cnh)` pula (cotando)', async () => {
+    const ext = extracaoPadrao();
+    delete ext.cnh_segurado.dados.validade_cnh; // sem validade → validação pulada
+    const { getSupabaseFn, updates } = makeSupabase();
+    const dispararQuote = jest.fn().mockResolvedValue({});
+    const r = await processarComDocs(inputPadrao(), {
+      extrair: makeExtrair(ext), buscarFipe: fipeOk(), dispararQuote, getSupabaseFn, agora: HOJE,
+    });
+    expect(r.status).toBe('cotando');
+    expect(dispararQuote).toHaveBeenCalledTimes(1);
+    expect(updates[updates.length - 1].error_message).toBeNull();
+  });
+});
+
+// Validação (e) — CPF proprietário (CRLV) vs CPF segurado (CNH) (worker L234–243).
+// Só roda quando `dono_eh_condutor === true` E ambos os CPFs estão presentes.
+describe('processarComDocs — validação (e) bordas de CPF proprietário', () => {
+  test('dono_eh_condutor=false + CPFs diferentes → validação pulada (cotando)', async () => {
+    const ext = extracaoPadrao();
+    ext.crlv.dados.cpf_proprietario = '999.999.999-99'; // diferente do segurado — só dispararia se dono_eh_condutor
+    const { getSupabaseFn, updates } = makeSupabase();
+    const dispararQuote = jest.fn().mockResolvedValue({});
+    const r = await processarComDocs(inputPadrao({ form: { dono_eh_condutor: false } }), {
+      extrair: makeExtrair(ext), buscarFipe: fipeOk(), dispararQuote, getSupabaseFn, agora: HOJE,
+    });
+    expect(r.status).toBe('cotando'); // (e) só roda com dono_eh_condutor === true
+    expect(dispararQuote).toHaveBeenCalledTimes(1);
+    expect(updates[updates.length - 1].error_message).toBeNull(); // sem "CPF do proprietário"
+  });
+
+  test('dono_eh_condutor=true mas CRLV sem cpf_proprietario → guard `cpfCrlv && cpfCnh` pula (cotando)', async () => {
+    const ext = extracaoPadrao();
+    delete ext.crlv.dados.cpf_proprietario; // cpfCrlv = '' (falsy) → comparação não roda
+    const { getSupabaseFn, updates } = makeSupabase();
+    const dispararQuote = jest.fn().mockResolvedValue({});
+    const r = await processarComDocs(inputPadrao(), { // formPadrao tem dono_eh_condutor: true
+      extrair: makeExtrair(ext), buscarFipe: fipeOk(), dispararQuote, getSupabaseFn, agora: HOJE,
+    });
+    expect(r.status).toBe('cotando');
+    expect(dispararQuote).toHaveBeenCalledTimes(1);
+    expect(updates[updates.length - 1].error_message).toBeNull();
+  });
+});
+
+// Validação (f) — lookup FIPE pela placa (worker L245–262). Bordas: buscarFipe
+// lançando (cobre o catch L250–252) e placa ausente (guard `if (placa)` pula o
+// lookup mas o problema "FIPE não resolvida" ainda é gerado).
+describe('processarComDocs — validação (f) bordas de lookup FIPE', () => {
+  test('buscarFipe lança exceção → catch trata como FIPE não resolvida (revisão manual)', async () => {
+    const { getSupabaseFn } = makeSupabase();
+    const dispararQuote = jest.fn();
+    const r = await processarComDocs(inputPadrao(), {
+      extrair: makeExtrair(extracaoPadrao()),
+      buscarFipe: jest.fn().mockRejectedValue(new Error('falha de rede')), // dispara o catch L250–252
+      dispararQuote, getSupabaseFn, agora: HOJE,
+    });
+    expect(r.status).toBe('revisao_manual');
+    expect(r.error_message).toMatch(/Não foi possível identificar o veículo via lookup FIPE pela placa ABC1D23/);
+    expect(dispararQuote).not.toHaveBeenCalled();
+  });
+
+  test('placa ausente no CRLV → guard `if (placa)` pula o lookup, mas gera problema "(ausente)" (revisão manual)', async () => {
+    const ext = extracaoPadrao();
+    delete ext.crlv.dados.placa; // dCrlv.placa ausente → placa = null (worker L144)
+    const { getSupabaseFn } = makeSupabase();
+    const dispararQuote = jest.fn();
+    const buscarFipe = jest.fn(); // não deve ser chamado (lookup pulado)
+    const r = await processarComDocs(inputPadrao(), {
+      extrair: makeExtrair(ext), buscarFipe, dispararQuote, getSupabaseFn, agora: HOJE,
+    });
+    expect(r.status).toBe('revisao_manual');
+    expect(r.error_message).toMatch(/Não foi possível identificar o veículo via lookup FIPE pela placa \(ausente\)/);
+    expect(buscarFipe).not.toHaveBeenCalled(); // guard pulou o lookup
+    expect(dispararQuote).not.toHaveBeenCalled();
+  });
+});
