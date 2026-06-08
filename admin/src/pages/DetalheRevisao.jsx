@@ -157,29 +157,38 @@ function DocCard({ tipo, doc, onRemover }) {
 
   const pct = doc.confianca_extracao != null ? Math.round(Number(doc.confianca_extracao) * 100) : null;
   const arquivo = String(doc.storage_path || '').split('/').pop() || label;
+  // dataHora → "dd/mm HH:mm:ss"; troca o separador por " · " para "{data} · {hora}".
+  const ts = dataHora(doc.created_at);
+  const tsFmt = ts.replace(' ', ' · ');
+  // Card em DUAS linhas: a linha 2 fica embaixo da 1 (container em coluna), então
+  // o badge de confiança não sobrepõe a metadata e os botões não espremem o nome.
   return (
-    <div className="row center gap-12" style={{ padding: '11px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--surface)' }}>
-      <div style={{ width: 38, height: 38, borderRadius: 9, flex: 'none', display: 'grid', placeItems: 'center', background: 'var(--blue-tint)', color: 'var(--blue-text)' }}>
-        <Icon.doc width={18} height={18} />
+    <div className="col gap-8" style={{ padding: '11px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--surface)' }}>
+      {/* Linha 1: ícone + (tipo + nome do arquivo) + badge de confiança */}
+      <div className="row center gap-10">
+        <div style={{ width: 36, height: 36, borderRadius: 9, flex: 'none', display: 'grid', placeItems: 'center', background: 'var(--blue-tint)', color: 'var(--blue-text)' }}>
+          <Icon.doc width={18} height={18} />
+        </div>
+        <div className="col grow" style={{ gap: 1, minWidth: 0 }}>
+          <span className="fz13 fw600" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+          <span className="mono fz11 muted" title={arquivo} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{arquivo}</span>
+        </div>
+        {pct != null && <ConfRing v={pct} size={36} />}
       </div>
-      <div className="col grow" style={{ gap: 2, minWidth: 0 }}>
-        <span className="fz13 fw600" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
-        <span className="mono fz11 muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{arquivo}</span>
-        {pct != null && (
-          <span className="row center gap-4 fz11" style={{ color: confCor(pct), fontWeight: 600 }}>
-            <Icon.sparkle width={11} height={11} />Extração {pct}% · <span className="muted fw500">{dataHora(doc.created_at)}</span>
-          </span>
-        )}
-      </div>
-      {pct != null && <ConfRing v={pct} size={38} />}
-      <div className="row center gap-6" style={{ flex: 'none' }}>
-        <button className="btn btn-secondary btn-sm" onClick={ver} disabled={abrindo}>
-          <Icon.eye /> Ver <Icon.external />
-        </button>
-        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => onRemover && onRemover(doc)}
-          title="Remover documento" aria-label="Remover documento" style={{ color: 'var(--red)' }}>
-          <Icon.trash width={15} height={15} />
-        </button>
+      {/* Linha 2: metadata (esquerda, cinza) + ações (direita) */}
+      <div className="row between center gap-8">
+        <span className="fz11 muted" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {pct != null ? `Extração ${tsFmt}` : tsFmt}
+        </span>
+        <div className="row center gap-6" style={{ flex: 'none' }}>
+          <button className="btn btn-secondary btn-sm" onClick={ver} disabled={abrindo}>
+            <Icon.eye /> Ver <Icon.external />
+          </button>
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => onRemover && onRemover(doc)}
+            title="Remover documento" aria-label="Remover documento" style={{ color: 'var(--red)' }}>
+            <Icon.trash width={15} height={15} />
+          </button>
+        </div>
       </div>
     </div>
   );

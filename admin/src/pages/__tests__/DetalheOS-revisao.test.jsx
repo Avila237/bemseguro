@@ -309,6 +309,66 @@ describe('DetalheOS — estado revisao_manual', () => {
     expect(screen.getByText(/Removido em/i)).toBeInTheDocument();
   });
 
+  // ── Card de documento (layout em 2 linhas) ──
+  const docCom = (over) => ({
+    id: 'd1', tipo: 'cnh_segurado', storage_bucket: 'documentos-clientes',
+    confianca_extracao: 0.9, created_at: new Date().toISOString(), ...over,
+  });
+
+  test('card: nome de arquivo curto aparece inteiro e com title', async () => {
+    listarDocumentos.mockResolvedValue([docCom({ storage_path: 'a1f3/cnh.jpg' })]);
+    renderDetalhe();
+    await screen.findByText('CNH do segurado');
+    const nome = screen.getByText('cnh.jpg');
+    expect(nome).toHaveTextContent('cnh.jpg');          // nome inteiro no DOM
+    expect(nome).toHaveAttribute('title', 'cnh.jpg');   // tooltip nativo
+  });
+
+  test('card: nome longo tem ellipsis e title com o nome completo', async () => {
+    const longo = 'cnh_frente_guilherme_avila_2024_v2.jpg';
+    listarDocumentos.mockResolvedValue([docCom({ storage_path: `a1f3/${longo}` })]);
+    renderDetalhe();
+    await screen.findByText('CNH do segurado');
+    const nome = screen.getByText(longo);
+    expect(nome).toHaveAttribute('title', longo);       // nome completo no tooltip
+    expect(nome.style.textOverflow).toBe('ellipsis');   // truncamento com "…"
+    expect(nome.style.overflow).toBe('hidden');
+    expect(nome.style.whiteSpace).toBe('nowrap');
+  });
+
+  test('card: badge de confiança cabe com 2 (97) e 3 (100) dígitos', async () => {
+    listarDocumentos.mockResolvedValue([
+      docCom({ id: 'd1', tipo: 'cnh_segurado', storage_path: 'a/cnh.jpg', confianca_extracao: 0.97 }),
+      docCom({ id: 'd2', tipo: 'crlv', storage_path: 'a/crlv.pdf', confianca_extracao: 1.0 }),
+    ]);
+    renderDetalhe();
+    await screen.findByText('CNH do segurado');
+    // O número do anel de confiança de cada doc é renderizado por inteiro.
+    expect(screen.getByText('97')).toBeInTheDocument();   // 2 dígitos
+    expect(screen.getByText('100')).toBeInTheDocument();  // 3 dígitos (média=99, distinta)
+  });
+
+  test('card: linha 2 (metadata + botões) não sobrepõe a linha 1 (nome)', async () => {
+    listarDocumentos.mockResolvedValue([docCom({ storage_path: 'a1f3/cnh.jpg' })]);
+    renderDetalhe();
+    await screen.findByText('CNH do segurado');
+    const nome = screen.getByText('cnh.jpg');
+    const meta = screen.getByText(/^Extração/);
+    const verBtn = screen.getByRole('button', { name: 'Ver' });
+
+    const linha1 = nome.closest('.row');   // ícone + nome + badge
+    const linha2 = meta.closest('.row');   // metadata + ações
+    expect(linha1).not.toBe(linha2);
+    expect(linha1.contains(verBtn)).toBe(false);  // botões fora da linha do nome
+    expect(linha2.contains(nome)).toBe(false);    // nome fora da linha das ações
+    // Empilhadas num card em coluna (linha 2 vem DEPOIS da linha 1 → sem sobreposição).
+    const card = linha1.parentElement;
+    expect(card).toBe(linha2.parentElement);
+    expect(card.className).toMatch(/\bcol\b/);
+    const kids = Array.from(card.children);
+    expect(kids.indexOf(linha1)).toBeLessThan(kids.indexOf(linha2));
+  });
+
   test('abre o documento via signed URL em nova aba', async () => {
     renderDetalhe();
     await screen.findByText('CRLV');
