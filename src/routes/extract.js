@@ -198,6 +198,15 @@ function criarHandler(docBase) {
       if (error) throw error;
       documentoId = data.id;
     } catch (err) {
+      // Race condition entre dois /extract concorrentes para o mesmo (os_id, tipo):
+      // o indice unico parcial `idx_documentos_os_unico_ativo` (migracao 010) rejeita
+      // o 2o insert com 23505 (unique_violation). Responde 409 para o cliente tentar
+      // de novo. Outros 23505 (outra constraint) ou outros codigos seguem 500.
+      const ref = `${err.message || ''} ${err.details || ''}`;
+      if (err.code === '23505' && ref.includes('idx_documentos_os_unico_ativo')) {
+        log.warn(`Anexo concorrente detectado tipo=${tipo} os=${os_id} (unique_violation)`);
+        return res.status(409).json({ error: 'Anexo concorrente detectado, tente novamente' });
+      }
       log.warn(`Insert em documentos_os falhou (arquivo ja no Storage: ${BUCKET}/${storagePath}): ${err.message}`);
       return res.status(500).json({ error: 'Falha ao registrar o documento' });
     }

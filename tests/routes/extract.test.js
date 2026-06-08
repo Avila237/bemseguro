@@ -441,6 +441,47 @@ describe('POST /extract — substituicao (1 doc ativo por os_id+tipo)', () => {
   });
 });
 
+describe('POST /extract — race condition no insert (índice único 010)', () => {
+  const extrair = () => request(makeApp())
+    .post('/extract/cnh')
+    .set('x-secret-token', TOKEN)
+    .field('os_id', 'os-1')
+    .attach('arquivo', Buffer.from('img'), { filename: 'cnh.jpg', contentType: 'image/jpeg' });
+
+  test('23505 no índice idx_documentos_os_unico_ativo → 409 (anexo concorrente)', async () => {
+    mockSupabaseState.insertResult = {
+      data: null,
+      error: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "idx_documentos_os_unico_ativo"',
+        details: 'Key (os_id, tipo)=(os-1, cnh_segurado) already exists.',
+      },
+    };
+    const res = await extrair();
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/concorrente/i);
+  });
+
+  test('23505 de OUTRA constraint → 500 (não confunde com a corrida)', async () => {
+    mockSupabaseState.insertResult = {
+      data: null,
+      error: { code: '23505', message: 'duplicate key value violates unique constraint "alguma_outra_constraint"' },
+    };
+    const res = await extrair();
+    expect(res.status).toBe(500);
+    expect(res.body.error).not.toMatch(/concorrente/i);
+  });
+
+  test('erro de insert não-23505 (ex.: 23503) → 500', async () => {
+    mockSupabaseState.insertResult = {
+      data: null,
+      error: { code: '23503', message: 'insert or update on table violates foreign key constraint' },
+    };
+    const res = await extrair();
+    expect(res.status).toBe(500);
+  });
+});
+
 describe('POST /extract/crlv', () => {
   test('aceita PDF, tipo sempre crlv, e retorna os dados extraidos', async () => {
     extrairDocumento.mockResolvedValue({

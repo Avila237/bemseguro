@@ -223,6 +223,19 @@ As leituras "ativas" filtram `removido_em IS NULL` (índice parcial
 (read-only). A remoção passa pela Edge Function **`remover-doc`** (service_role) e
 é registrada em `audit_log` (`endpoint='/edge/remover-doc'`, `auth='painel'`).
 
+**Unicidade do doc ativo (migração 010):** garante **no máximo 1 documento ativo
+por (`os_id`, `tipo`)**. A migração (1) faz **cleanup retroativo** do estado sujo
+(OSs com >1 ativa do mesmo tipo → mantém a `created_at` mais recente, soft-deleta
+as demais com `removido_por = NULL`) e (2) cria o **índice único parcial**
+`idx_documentos_os_unico_ativo` (`UNIQUE (os_id, tipo) WHERE removido_em IS NULL`).
+Esse índice reforça no banco a substituição feita pelo `/extract` (passo 3.5) e
+fecha a race entre `/extract` concorrentes (2º insert → 23505 → 409 na rota).
+
+> **Dois índices distintos** em `documentos_os`: `idx_documentos_os_ativos`
+> (migração 009, **não-único**) é só para **performance** de leitura dos ativos;
+> `idx_documentos_os_unico_ativo` (migração 010, **único**) é para **garantir a
+> unicidade** do ativo por `(os_id, tipo)`.
+
 ### Storage — bucket `documentos-clientes`
 Bucket **privado** (sem acesso público) para os arquivos de CNH/CRLV. Todo acesso
 passa pelo **backend com a service_role** (download direto ou URL assinada de
@@ -293,14 +306,22 @@ tudo em `documentos_os`. Fazem parte da feature de integração CRM + IA.
      da IA), `confianca_extracao` (= **média** das confianças individuais, ou
      `null` se vazio), **`confianca_por_campo`** (= objeto `confianca` da IA, por
      campo — migração 008), `revisado:false`; `.select('id').single()`.
+     - **Race condition:** se um `/extract` concorrente já inseriu a row ativa do
+       mesmo `(os_id, tipo)`, este insert viola `idx_documentos_os_unico_ativo`
+       (Postgres **23505**) → a rota responde **409** ("Anexo concorrente
+       detectado, tente novamente"). Outros 23505 / demais erros seguem **500**.
   5. **Resposta 200** — `{ success, tipo, documento_id, storage_path, dados,
      confianca, observacoes, modelo, tokensUsados }`.
 
-  > **Invariante "1 doc ativo por (`os_id`, `tipo`)":** aplicada hoje em código
-  > (passo 3.5). Será **reforçada no banco** por um índice único parcial na
-  > **migração 010** (a criar — `UNIQUE (os_id, tipo) WHERE removido_em IS NULL`).
-  > Convenção de `removido_por`: **`NULL` = substituição automática** (passo 3.5);
-  > **preenchido = remoção manual** pelo operador (Edge Function `remover-doc`).
+  > **Invariante "1 doc ativo por (`os_id`, `tipo`)":** aplicada em código
+  > (passo 3.5) **e enforced no banco** por um **índice único parcial**
+  > (`idx_documentos_os_unico_ativo`, migração 010 — `UNIQUE (os_id, tipo) WHERE
+  > removido_em IS NULL`). O índice também **fecha a janela de race condition**
+  > entre dois `/extract` concorrentes: o 2º INSERT viola a constraint (Postgres
+  > **23505**) e a rota responde **409** ("Anexo concorrente detectado, tente
+  > novamente"). Convenção de `removido_por`: **`NULL` = substituição automática**
+  > (passo 3.5 / cleanup da migração 010); **preenchido = remoção manual** pelo
+  > operador (Edge Function `remover-doc`).
 
   **Comportamento em falhas (rollback parcial):** o upload acontece **antes** do
   insert. Se o insert em `documentos_os` falhar (passo 4), o endpoint retorna
