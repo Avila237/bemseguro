@@ -277,6 +277,17 @@ tudo em `documentos_os`. Fazem parte da feature de integração CRM + IA.
        responde **422** (`{ error, tipo_esperado, tipo_detectado, mensagem }`) e
        **remove o arquivo do Storage** (`storage.remove([storagePath])`) — **não**
        insere em `documentos_os` nem deixa upload inválido órfão.
+  3.5. **Substituição (1 doc ativo por `os_id`+`tipo`)** — antes do insert,
+     **soft-deleta as versões anteriores ativas do MESMO tipo**:
+     `UPDATE documentos_os SET removido_em = now(), removido_por = NULL
+     WHERE os_id = $1 AND tipo = $2 AND removido_em IS NULL`. Mantém a invariante
+     **"no máximo 1 documento ativo por (`os_id`, `tipo`)"**. A regra é **por par
+     `os_id`+`tipo`**: anexar a CNH do condutor **não** afeta a do segurado nem o
+     CRLV. **`removido_por = NULL`** é intencional — sinaliza **substituição
+     automática pelo sistema**, em contraste com a remoção **manual** via
+     `remover-doc` (que grava o `user.id` do operador). **Não** escreve em
+     `audit_log` (simetria com o resto do `/extract`). Se este UPDATE falhar →
+     **500** e **o insert não é tentado**.
   4. **Insert em `documentos_os`** — `os_id`, `tipo`, `storage_path`,
      `storage_bucket`, `mime_type`, `tamanho_bytes`, `dados_extraidos` (= `dados`
      da IA), `confianca_extracao` (= **média** das confianças individuais, ou
@@ -284,6 +295,12 @@ tudo em `documentos_os`. Fazem parte da feature de integração CRM + IA.
      campo — migração 008), `revisado:false`; `.select('id').single()`.
   5. **Resposta 200** — `{ success, tipo, documento_id, storage_path, dados,
      confianca, observacoes, modelo, tokensUsados }`.
+
+  > **Invariante "1 doc ativo por (`os_id`, `tipo`)":** aplicada hoje em código
+  > (passo 3.5). Será **reforçada no banco** por um índice único parcial na
+  > **migração 010** (a criar — `UNIQUE (os_id, tipo) WHERE removido_em IS NULL`).
+  > Convenção de `removido_por`: **`NULL` = substituição automática** (passo 3.5);
+  > **preenchido = remoção manual** pelo operador (Edge Function `remover-doc`).
 
   **Comportamento em falhas (rollback parcial):** o upload acontece **antes** do
   insert. Se o insert em `documentos_os` falhar (passo 4), o endpoint retorna
@@ -293,6 +310,11 @@ tudo em `documentos_os`. Fazem parte da feature de integração CRM + IA.
   arquivo no Storage sem extração. Não há limpeza automática do órfão hoje (a
   política de retenção de 5 anos eventualmente o cobre); reprocessar a mesma OS
   gera um novo arquivo com timestamp diferente (sem colisão de path).
+  **Trade-off da substituição (passo 3.5):** ela roda **antes** do insert — se o
+  insert falhar depois, as versões antigas já ficaram soft-deletadas e a OS pode
+  ficar **sem nenhum doc ativo** daquele tipo até o operador reanexar (gera novo
+  arquivo). Aceitável: a tela de revisão deixa o tipo como "faltando" e o reenvio
+  recria a row ativa.
 - **Wrapper** (`src/services/anthropic.js`): `extrairDocumento({ tipoDocumento,
   base64Image, mimeType })` → `{ dados, confianca, observacoes, modelo,
   tokensUsados }`.
@@ -317,11 +339,14 @@ tudo em `documentos_os`. Fazem parte da feature de integração CRM + IA.
   `{ erro:'tipo_incorreto', ... }` (ver passo 3 acima). Editar a extração = mexer
   **só** nesses `.md` (lidos e cacheados em runtime; não precisam de rebuild).
 - **Testes:** `tests/routes/extract.test.js` (supertest, com **Supabase mockado**
-  — Storage `upload`/`remove` + tabela `insert`: 401 sem token, 400 sem arquivo/sem
-  `os_id`/`tipo` inválido, 404 OS inexistente, 400 MIME inválido, 413 grande
-  demais, 200 com upload+IA+insert e `documento_id`, média de confiança, 500 em
-  falha de upload, 500 + warning em falha de insert, 502 em falha de IA,
-  **422 + remoção do arquivo em tipo incorreto**, PDF/CRLV) e
+  — Storage `upload`/`remove` + tabela `documentos_os` **stateful**: 401 sem token,
+  400 sem arquivo/sem `os_id`/`tipo` inválido, 404 OS inexistente, 400 MIME
+  inválido, 413 grande demais, 200 com upload+IA+insert e `documento_id`, média de
+  confiança, 500 em falha de upload, 500 + warning em falha de insert, 502 em falha
+  de IA, **422 + remoção do arquivo em tipo incorreto**, e a **substituição**
+  (1º anexo cria 1 ativa; novo anexo soft-deleta a anterior com `removido_por=null`;
+  isolamento por tipo p/ condutor e CRLV; múltiplos ativos degenerados; 422 não
+  substitui; falha do UPDATE → 500 sem insert), PDF/CRLV) e
   `tests/services/anthropic.test.js` (parse robusto, montagem da requisição, bloco
   image vs document, sem API key, 4xx não retentado, **tipo incorreto →
   `TIPO_INCORRETO`**).

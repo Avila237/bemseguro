@@ -12,21 +12,56 @@ const mockSupabaseState = {
   osResult: { data: { id: 'os-1' }, error: null },     // os_cotacao.maybeSingle()
   uploadResult: { data: { path: 'p' }, error: null },  // storage.upload()
   insertResult: { data: { id: 'doc-1' }, error: null },// documentos_os insert.single()
+  updateResult: { data: [], error: null },             // substituicao (update.is())
   removeResult: { data: [], error: null },             // storage.remove()
+  docs: [],            // estado das rows de documentos_os (mock stateful)
   uploadCalls: [],
   removeCalls: [],
+  updateCalls: [],     // cada substituicao executada (update().eq().eq().is())
   insertedRow: null,
+  nextId: 1,
 };
 
+// Mock STATEFUL de documentos_os: o INSERT empilha uma row ativa e a SUBSTITUICAO
+// (update + is('removido_em', null)) aplica o patch nas rows que casam os filtros —
+// permite asseverar o estado (ativa/removida) por (os_id, tipo). os_cotacao segue
+// simples (maybeSingle → osResult).
 jest.mock('../../src/services/supabase', () => {
   const state = mockSupabaseState;
   const makeBuilder = () => {
+    const filtersEq = {};
+    const filtersNull = [];
+    let insertRow = null;
+    let updatePatch = null;
     const b = {};
     b.select = jest.fn(() => b);
-    b.eq = jest.fn(() => b);
-    b.insert = jest.fn((row) => { state.insertedRow = row; return b; });
+    b.eq = jest.fn((col, val) => { filtersEq[col] = val; return b; });
+    b.insert = jest.fn((row) => { insertRow = row; state.insertedRow = row; return b; });
+    b.update = jest.fn((patch) => { updatePatch = patch; return b; });
     b.maybeSingle = jest.fn(() => Promise.resolve(state.osResult));
-    b.single = jest.fn(() => Promise.resolve(state.insertResult));
+    b.single = jest.fn(() => Promise.resolve(execInsert()));
+    // .is('removido_em', null) e o terminal do chain de SUBSTITUICAO → executa.
+    b.is = jest.fn((col, val) => { if (val === null) filtersNull.push(col); return Promise.resolve(execUpdate()); });
+
+    function matches(row) {
+      for (const [c, v] of Object.entries(filtersEq)) if (row[c] !== v) return false;
+      for (const c of filtersNull) if (row[c] != null) return false;
+      return true;
+    }
+    function execUpdate() {
+      state.updateCalls.push({ patch: updatePatch, eq: { ...filtersEq }, isNull: [...filtersNull] });
+      if (state.updateResult && state.updateResult.error) return { data: null, error: state.updateResult.error };
+      const afetados = [];
+      state.docs.forEach(r => { if (matches(r)) { Object.assign(r, updatePatch); afetados.push(r); } });
+      return { data: afetados, error: null };
+    }
+    function execInsert() {
+      if (state.insertResult && state.insertResult.error) return { data: null, error: state.insertResult.error };
+      const id = (state.insertResult && state.insertResult.data && state.insertResult.data.id) || ('doc-' + state.nextId++);
+      const row = { id, removido_em: null, removido_por: null, ...insertRow };
+      state.docs.push(row);
+      return { data: { id }, error: null };
+    }
     return b;
   };
   return {
@@ -75,10 +110,14 @@ beforeEach(() => {
   mockSupabaseState.osResult = { data: { id: 'os-1' }, error: null };
   mockSupabaseState.uploadResult = { data: { path: 'p' }, error: null };
   mockSupabaseState.insertResult = { data: { id: 'doc-1' }, error: null };
+  mockSupabaseState.updateResult = { data: [], error: null };
   mockSupabaseState.removeResult = { data: [], error: null };
+  mockSupabaseState.docs = [];
   mockSupabaseState.uploadCalls = [];
   mockSupabaseState.removeCalls = [];
+  mockSupabaseState.updateCalls = [];
   mockSupabaseState.insertedRow = null;
+  mockSupabaseState.nextId = 1;
 });
 
 describe('POST /extract/cnh — auth e validacao', () => {
@@ -299,6 +338,106 @@ describe('POST /extract/cnh — documento de tipo incorreto', () => {
     expect(mockSupabaseState.removeCalls[0].bucket).toBe('documentos-clientes');
     expect(mockSupabaseState.removeCalls[0].paths[0]).toMatch(/^os-1\/cnh_segurado-\d+\.jpg$/);
     expect(mockSupabaseState.insertedRow).toBeNull();
+  });
+});
+
+describe('POST /extract — substituicao (1 doc ativo por os_id+tipo)', () => {
+  const ativos = (tipo) => mockSupabaseState.docs.filter(d => d.tipo === tipo && d.removido_em == null);
+
+  function extrairCnh(tipo) {
+    const req = request(makeApp())
+      .post('/extract/cnh')
+      .set('x-secret-token', TOKEN)
+      .field('os_id', 'os-1');
+    if (tipo) req.field('tipo', tipo);
+    return req.attach('arquivo', Buffer.from('img'), { filename: 'cnh.jpg', contentType: 'image/jpeg' });
+  }
+  const extrairCrlv = () => request(makeApp())
+    .post('/extract/crlv')
+    .set('x-secret-token', TOKEN)
+    .field('os_id', 'os-1')
+    .attach('arquivo', Buffer.from('%PDF'), { filename: 'crlv.pdf', contentType: 'application/pdf' });
+
+  test('1) primeiro anexo do tipo: cria 1 row ativa e nao afeta nada pre-existente', async () => {
+    const res = await extrairCnh('cnh_segurado');
+    expect(res.status).toBe(200);
+    // Exatamente 1 row ativa do tipo, e nenhuma outra row existe (nada foi afetado).
+    expect(ativos('cnh_segurado')).toHaveLength(1);
+    expect(mockSupabaseState.docs).toHaveLength(1);
+    expect(mockSupabaseState.docs[0].removido_em).toBeNull();
+  });
+
+  test('2) substituicao: soft-deleta a versao anterior (removido_por=null) e nova fica unica ativa', async () => {
+    mockSupabaseState.docs.push({ id: 'old-1', os_id: 'os-1', tipo: 'cnh_segurado', removido_em: null, removido_por: 'user-abc' });
+
+    const res = await extrairCnh('cnh_segurado');
+    expect(res.status).toBe(200);
+
+    const antiga = mockSupabaseState.docs.find(d => d.id === 'old-1');
+    expect(antiga.removido_em).not.toBeNull();          // soft-deletada
+    expect(antiga.removido_por).toBeNull();             // substituicao AUTOMATICA
+
+    const at = ativos('cnh_segurado');
+    expect(at).toHaveLength(1);
+    expect(at[0].id).toBe('doc-1');                     // a nova row
+  });
+
+  test('3a) isolamento: anexar CNH do condutor nao afeta a CNH do segurado', async () => {
+    mockSupabaseState.docs.push({ id: 'seg-1', os_id: 'os-1', tipo: 'cnh_segurado', removido_em: null, removido_por: null });
+
+    const res = await extrairCnh('cnh_condutor');
+    expect(res.status).toBe(200);
+    expect(ativos('cnh_segurado')).toHaveLength(1);     // segurado intacto
+    expect(mockSupabaseState.docs.find(d => d.id === 'seg-1').removido_em).toBeNull();
+    expect(ativos('cnh_condutor')).toHaveLength(1);     // condutor criado
+  });
+
+  test('3b) isolamento: anexar CRLV nao afeta a CNH do segurado', async () => {
+    mockSupabaseState.docs.push({ id: 'seg-1', os_id: 'os-1', tipo: 'cnh_segurado', removido_em: null, removido_por: null });
+
+    const res = await extrairCrlv();
+    expect(res.status).toBe(200);
+    expect(ativos('cnh_segurado')).toHaveLength(1);     // segurado intacto
+    expect(mockSupabaseState.docs.find(d => d.id === 'seg-1').removido_em).toBeNull();
+    expect(ativos('crlv')).toHaveLength(1);             // crlv criado
+  });
+
+  test('4) multiplos ativos pre-existentes (estado degenerado): todos sao soft-deletados', async () => {
+    mockSupabaseState.docs.push(
+      { id: 'old-1', os_id: 'os-1', tipo: 'cnh_condutor', removido_em: null, removido_por: null },
+      { id: 'old-2', os_id: 'os-1', tipo: 'cnh_condutor', removido_em: null, removido_por: null },
+    );
+
+    const res = await extrairCnh('cnh_condutor');
+    expect(res.status).toBe(200);
+    expect(mockSupabaseState.docs.find(d => d.id === 'old-1').removido_em).not.toBeNull();
+    expect(mockSupabaseState.docs.find(d => d.id === 'old-2').removido_em).not.toBeNull();
+    expect(ativos('cnh_condutor')).toHaveLength(1);     // só a nova
+  });
+
+  test('5) tipo incorreto (422) NAO dispara substituicao: doc antigo continua ativo', async () => {
+    mockSupabaseState.docs.push({ id: 'seg-1', os_id: 'os-1', tipo: 'cnh_segurado', removido_em: null, removido_por: null });
+    extrairDocumento.mockRejectedValue(Object.assign(
+      new Error('Documento incorreto. Esperado: cnh, Detectado: crlv.'),
+      { code: 'TIPO_INCORRETO', tipoDetectado: 'crlv', tipoEsperado: 'cnh' },
+    ));
+
+    const res = await extrairCnh('cnh_segurado');
+    expect(res.status).toBe(422);
+    expect(mockSupabaseState.updateCalls).toHaveLength(0);   // substituicao nao foi executada
+    expect(mockSupabaseState.docs.find(d => d.id === 'seg-1').removido_em).toBeNull(); // antigo intacto
+    expect(ativos('cnh_segurado')).toHaveLength(1);
+  });
+
+  test('6) falha no UPDATE de substituicao retorna 500 e nao insere', async () => {
+    mockSupabaseState.docs.push({ id: 'seg-1', os_id: 'os-1', tipo: 'cnh_segurado', removido_em: null, removido_por: null });
+    mockSupabaseState.updateResult = { data: null, error: { message: 'db indisponivel' } };
+
+    const res = await extrairCnh('cnh_segurado');
+    expect(res.status).toBe(500);
+    expect(mockSupabaseState.insertedRow).toBeNull();       // insert nao tentado
+    // O antigo nao foi alterado (o update falhou antes de aplicar).
+    expect(mockSupabaseState.docs.find(d => d.id === 'seg-1').removido_em).toBeNull();
   });
 });
 

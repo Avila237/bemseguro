@@ -151,8 +151,32 @@ function criarHandler(docBase) {
       return res.status(502).json({ success: false, error: 'Falha ao extrair dados do documento' });
     }
 
+    // 3.5) Substituicao: garante a invariante "no maximo 1 doc ATIVO por
+    //      (os_id, tipo)". Soft-deleta as versoes ANTERIORES ativas do MESMO tipo
+    //      antes de inserir a nova (a regra e por par os_id+tipo, entao anexar a
+    //      CNH do condutor nao afeta a do segurado nem o CRLV). `removido_por =
+    //      null` sinaliza substituicao AUTOMATICA pelo sistema, em contraste com a
+    //      remocao MANUAL via Edge Function remover-doc (que grava o user.id do
+    //      operador). NAO escreve em audit_log (simetria com o resto do /extract).
+    //      Se este UPDATE falhar, devolve 500 e NAO tenta o insert.
+    try {
+      const { error: subErr } = await supabase
+        .from('documentos_os')
+        .update({ removido_em: new Date().toISOString(), removido_por: null })
+        .eq('os_id', os_id)
+        .eq('tipo', tipo)
+        .is('removido_em', null);
+      if (subErr) throw subErr;
+    } catch (err) {
+      log.error(`Falha ao substituir versoes anteriores tipo=${tipo} os=${os_id}: ${err.message}`);
+      return res.status(500).json({ error: 'Falha ao substituir o documento anterior' });
+    }
+
     // 4) Persiste os metadados + extracao em documentos_os. Se falhar, o arquivo
     //    JA esta no Storage (rollback parcial) — registra warning e devolve 500.
+    //    TRADE-OFF conhecido: a substituicao (3.5) ja rodou, entao as versoes
+    //    antigas ficam soft-deletadas mesmo que o insert falhe; o operador
+    //    reanexa (gerando um novo arquivo/timestamp) para criar a row ativa.
     let documentoId;
     try {
       const { data, error } = await supabase
